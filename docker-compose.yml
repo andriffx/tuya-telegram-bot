@@ -1,0 +1,23 @@
+version: "3.8"
+
+services:
+  tuyabot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tuyabot
+    restart: unless-stopped
+
+    # Mount environment & persistent data dari host
+    volumes:
+      - ./.env:/app/.env:ro          # read-only env
+      - ./users_db.json:/app/users_db.json  # persist runtime users
+      - ./bot.log:/app/bot.log       # persist logs
+
+    # tinytuya needs host network to reach local Tuya devices
+    # (remove if using Tuya Cloud API only)
+    network_mode: host
+
+    # Graceful shutdown
+    stop_signal: SIGTERM
+    stop_grace_period: 10s

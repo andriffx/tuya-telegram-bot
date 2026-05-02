@@ -1,0 +1,40 @@
+# ── Environment / Secrets ──
+.env
+*.env
+.env.*
+!.env.example
+@info.md
+info.md
+secrets*
+
+# ── Runtime Database & Logs ──
+users_db.json
+allowed_users.json
+snapshot.json
+tuya-raw.json
+*.log
+
+# ── Python ──
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+env
+venv
+.venv
+ENV
+
+# ── IDE ──
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ── OS ──
+.DS_Store
+Thumbs.db

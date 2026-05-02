@@ -1,0 +1,47 @@
+# ── Environment & Secrets ──
+.env
+*.env
+
+# ── Runtime Data ──
+users_db.json
+allowed_users.json
+snapshot.json
+bot.log
+*.log
+
+# ── Python ──
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+
+# ── Git ──
+.git
+.gitignore
+
+# ── IDE ──
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ── OS ──
+.DS_Store
+Thumbs.db
+
+# ── Docker ──
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# ── Docs ──
+README.md
+info.md
+@info.md
+
+# ── Misc ──
+tuya-raw.json
+*.backup
+*.bak
