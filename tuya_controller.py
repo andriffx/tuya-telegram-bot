@@ -83,9 +83,10 @@ class TuyaDeviceController:
 
             if current is not None and bool(current) == state:
                 label = "menyala" if state else "mati"
+                icon = "💧" if device_name == "air" else "💡"
                 return {
                     "success": True,
-                    "message": f"💡 {device_name.upper()} sudah {label}",
+                    "message": f"{icon} {device_name.upper()} sudah {label}",
                     "no_op": True
                 }
         except Exception:
