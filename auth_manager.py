@@ -70,7 +70,7 @@ class AuthManager:
         self._load()
 
     def _load(self):
-        if USERS_FILE.exists():
+        if USERS_FILE.exists() and USERS_FILE.stat().st_size > 0:
             try:
                 data = json.loads(USERS_FILE.read_text(encoding="utf-8"))
                 for uid, role in data.get("users", {}).items():
@@ -78,6 +78,16 @@ class AuthManager:
                 logger.info("Loaded %d user(s) from %s", len(self._db), USERS_FILE)
             except Exception as e:
                 logger.warning("Gagal muat %s: %s", USERS_FILE, e)
+        else:
+            # Inisialisasi file kosong dengan struktur valid
+            try:
+                USERS_FILE.write_text(
+                    json.dumps({"users": {}}, indent=2),
+                    encoding="utf-8"
+                )
+                logger.info("Created empty %s", USERS_FILE)
+            except Exception as e:
+                logger.warning("Gagal buat %s: %s", USERS_FILE, e)
 
     def _save(self):
         try:

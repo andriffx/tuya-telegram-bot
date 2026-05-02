@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   tuyabot:
     build:
@@ -12,7 +10,7 @@ services:
     volumes:
       - ./.env:/app/.env:ro          # read-only env
       - ./users_db.json:/app/users_db.json  # persist runtime users
-      - ./bot.log:/app/bot.log       # persist logs
+      - ./logs:/app/logs             # persist logs
 
     # tinytuya needs host network to reach local Tuya devices
     # (remove if using Tuya Cloud API only)

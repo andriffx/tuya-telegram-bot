@@ -10,6 +10,7 @@ Role:
 
 import asyncio
 import logging
+import os
 import signal
 import sys
 from telegram import Update
@@ -21,11 +22,12 @@ from auth_manager import auth, ROLE_NAMES, PUBLIC, USER, ADMIN, SUPERADMIN
 from rate_limiter import rate_limit
 
 # ── Logging ke file + console ──
+os.makedirs("logs", exist_ok=True)
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     handlers=[
-        logging.FileHandler("bot.log", encoding="utf-8"),
+        logging.FileHandler("logs/bot.log", encoding="utf-8"),
         logging.StreamHandler()
     ]
 )

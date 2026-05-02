@@ -13,6 +13,8 @@ allowed_users.json
 snapshot.json
 tuya-raw.json
 *.log
+logs/*
+!logs/.gitkeep
 
 # ── Python ──
 __pycache__/
