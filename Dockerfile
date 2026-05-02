@@ -23,9 +23,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
-# Create a non-root user for security
-RUN useradd -m -u 1000 botuser && chown -R botuser:botuser /app
-USER botuser
-
-# Run the bot
+# Run as root inside container so bind-mounted volumes are writable
+# (Host file ownership is the actual security boundary in single-node Docker)
 CMD ["python", "bot.py"]

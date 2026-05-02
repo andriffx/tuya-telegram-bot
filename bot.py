@@ -22,14 +22,17 @@ from auth_manager import auth, ROLE_NAMES, PUBLIC, USER, ADMIN, SUPERADMIN
 from rate_limiter import rate_limit
 
 # ── Logging ke file + console ──
-os.makedirs("logs", exist_ok=True)
+handlers: list[logging.Handler] = [logging.StreamHandler()]
+try:
+    os.makedirs("logs", exist_ok=True)
+    handlers.append(logging.FileHandler("logs/bot.log", encoding="utf-8"))
+except (PermissionError, OSError) as e:
+    print(f"[WARN] Tidak bisa buat file log: {e}. Logging ke console saja.", file=sys.stderr)
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.FileHandler("logs/bot.log", encoding="utf-8"),
-        logging.StreamHandler()
-    ]
+    handlers=handlers
 )
 logger = logging.getLogger(__name__)
 
