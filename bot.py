@@ -8,10 +8,8 @@ Role:
   Superadmin → + manajemen user (/users, /allowuser, /removeuser)
 """
 
-import asyncio
 import logging
 import os
-import signal
 import sys
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
@@ -503,29 +501,8 @@ def main():
 
     application.add_error_handler(error_handler)
 
-    # ── Graceful shutdown untuk Docker ──
-    async def _run():
-        await application.initialize()
-        await application.start()
-        logger.info("🤖 Bot siap! Menunggu pesan...")
-
-        stop_event = asyncio.Event()
-
-        def _signal_handler(signum, frame):
-            logger.info("🛑 Menerima signal %s, shutdown gracefully...", signum)
-            stop_event.set()
-
-        signal.signal(signal.SIGTERM, _signal_handler)
-        signal.signal(signal.SIGINT, _signal_handler)
-
-        try:
-            await stop_event.wait()
-        finally:
-            await application.stop()
-            await application.shutdown()
-            logger.info("✅ Bot berhasil dihentikan.")
-
-    asyncio.run(_run())
+    # Jalankan polling (built-in signal handler, Ctrl+C langsung stop)
+    application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
 if __name__ == "__main__":
