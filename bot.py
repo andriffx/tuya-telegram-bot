@@ -34,6 +34,8 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     handlers=handlers
 )
+# Suppress httpx INFO logs to avoid leaking bot tokens in URLs
+logging.getLogger("httpx").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 tuya = TuyaDeviceController()
