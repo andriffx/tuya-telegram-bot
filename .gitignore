@@ -36,6 +36,7 @@ ENV
 .idea/
 *.swp
 *.swo
+.pi
 
 # ── OS ──
 .DS_Store

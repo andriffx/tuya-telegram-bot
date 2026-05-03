@@ -146,6 +146,14 @@ class AuthManager:
         self._save()
         return True
 
+    def get_superadmin_ids(self) -> set:
+        """Return semua user ID dengan role Superadmin (ENV + runtime)."""
+        ids = set(ENV_SUPERADMIN)
+        for uid, role in self._db.items():
+            if role == SUPERADMIN:
+                ids.add(uid)
+        return ids
+
     def list_users(self) -> dict:
         env_map = {}
         for uid in ENV_SUPERADMIN:

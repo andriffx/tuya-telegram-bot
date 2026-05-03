@@ -11,6 +11,7 @@ Role:
 import logging
 import os
 import sys
+from datetime import datetime
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 
@@ -108,6 +109,56 @@ async def _send_control_result(update: Update, result: dict, device_name: str):
         )
     else:
         await update.message.reply_text(result["message"])
+
+
+async def _notify_superadmins(
+    context: ContextTypes.DEFAULT_TYPE,
+    user,
+    device_name: str,
+    action: str,  # "on" atau "off"
+    result: dict
+):
+    """Kirim notifikasi ke semua superadmin saat ada kontrol perangkat (skip jika superadmin)."""
+    superadmin_ids = auth.get_superadmin_ids()
+    if not superadmin_ids:
+        return
+
+    role = auth.get_role(user.id)
+    if role == SUPERADMIN:
+        return  # Tidak perlu notif jika superadmin yang kontrol
+
+    role_icon = {0: "🌐", 1: "💧", 2: "💡", 3: "👑"}.get(role, "🌐")
+    role_name = ROLE_NAMES.get(role, "Publik")
+
+    device_icon = "💧" if device_name == "air" else "💡"
+    action_label = "NYALA" if action == "on" else "MATI"
+    action_emoji = "🟢" if action == "on" else "🔴"
+
+    if result.get("no_op"):
+        status = "ℹ️ Sudah Menyala (tidak ada perubahan)" if action == "on" else "ℹ️ Sudah Mati (tidak ada perubahan)"
+    elif result["success"]:
+        status = "✅ Berhasil Dinyalakan" if action == "on" else "✅ Berhasil Dimatikan"
+    else:
+        action_word = "Menyalakan" if action == "on" else "Mematikan"
+        status = f"❌ Gagal {action_word} — `{result.get('message', 'Unknown error')}`"
+
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    text = (
+        f"🚨 *Notifikasi Kontrol Perangkat*\n\n"
+        f"👤 *User*   : `{user.full_name}` (@{user.username or 'none'})\n"
+        f"🆔 *ID*     : `{user.id}`\n"
+        f"🏷️ *Role*   : {role_icon} {role_name}\n\n"
+        f"🔧 *Aksi*   : {device_icon} {device_name.upper()} → {action_emoji} {action_label}\n"
+        f"⏰ *Waktu*  : `{timestamp}`\n"
+        f"📌 *Status* : {status}"
+    )
+
+    for admin_id in superadmin_ids:
+        try:
+            await context.bot.send_message(chat_id=admin_id, text=text, parse_mode="Markdown")
+        except Exception as e:
+            logger.warning("Gagal kirim notifikasi ke superadmin %s: %s", admin_id, e)
 
 
 # ──── PUBLIC Commands ────
@@ -235,6 +286,7 @@ async def air_on(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("💧 Menyalakan air...")
     result = tuya.turn_on("air")
     await _send_control_result(update, result, "air")
+    await _notify_superadmins(context, update.effective_user, "air", "on", result)
 
 
 # ──── ADMIN Commands — bisa MATIKAN air + kontrol lampu ────
@@ -245,6 +297,7 @@ async def air_off(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🔌 Mematikan air...")
     result = tuya.turn_off("air")
     await _send_control_result(update, result, "air")
+    await _notify_superadmins(context, update.effective_user, "air", "off", result)
 
 
 @rate_limit
@@ -253,6 +306,7 @@ async def lampu_on(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("💡 Menyalakan lampu...")
     result = tuya.turn_on("lampu")
     await _send_control_result(update, result, "lampu")
+    await _notify_superadmins(context, update.effective_user, "lampu", "on", result)
 
 
 @rate_limit
@@ -261,6 +315,7 @@ async def lampu_off(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🌑 Mematikan lampu...")
     result = tuya.turn_off("lampu")
     await _send_control_result(update, result, "lampu")
+    await _notify_superadmins(context, update.effective_user, "lampu", "off", result)
 
 
 # ──── SHARED Monitoring (semua role yang login) ────
