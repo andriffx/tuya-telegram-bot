@@ -1,19 +1,26 @@
 """
 Telegram Bot — Tuya Smart Home (BARDI) dengan Role-Based Access Control.
-
-Role:
-  Publik   → /start, /help, /whoami
-  User     → + kontrol AIR (on/off)
-  Admin    → + kontrol LAMPU (on/off)
-  Superadmin → + manajemen user (/users, /allowuser, /removeuser)
+UI: ReplyKeyboardMarkup + InlineKeyboardMarkup (command / tetap tersedia sebagai fallback)
 """
 
 import logging
 import os
 import sys
 from datetime import datetime
-from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
+from telegram import (
+    Update,
+    ReplyKeyboardMarkup,
+    InlineKeyboardMarkup,
+    InlineKeyboardButton,
+)
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    CallbackQueryHandler,
+    ContextTypes,
+    MessageHandler,
+    filters,
+)
 
 from config import TELEGRAM_BOT_TOKEN
 from tuya_controller import TuyaDeviceController
@@ -33,45 +40,128 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     handlers=handlers
 )
-# Suppress httpx INFO logs to avoid leaking bot tokens in URLs
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 tuya = TuyaDeviceController()
 
+# ═══════════════════════════════════════════════════════
+#  KEYBOARD BUILDERS
+# ═══════════════════════════════════════════════════════
 
-# ── Decorator Role-Based ──
+def _main_keyboard(role: int) -> ReplyKeyboardMarkup:
+    """Menu utama sesuai role."""
+    if role == PUBLIC:
+        kb = [["🪪 Akun Saya"], ["📖 Bantuan"]]
+    elif role == USER:
+        kb = [["💧 Air"], ["📊 Monitoring"], ["🪪 Akun Saya"]]
+    elif role == ADMIN:
+        kb = [["💧 Air", "💡 Lampu"], ["📊 Monitoring"], ["🪪 Akun Saya"]]
+    else:  # SUPERADMIN
+        kb = [
+            ["💧 Air", "💡 Lampu"],
+            ["📊 Monitoring"],
+            ["👑 Manajemen User"],
+            ["🪪 Akun Saya"],
+        ]
+    return ReplyKeyboardMarkup(kb, resize_keyboard=True)
+
+
+def _air_inline(role: int) -> InlineKeyboardMarkup:
+    btns = []
+    if role >= USER:
+        btns.append(InlineKeyboardButton("🟢 Nyalakan", callback_data="air|on"))
+    if role >= ADMIN:
+        btns.append(InlineKeyboardButton("🔴 Matikan", callback_data="air|off"))
+    rows = [btns] if btns else []
+    rows.append([
+        InlineKeyboardButton("ℹ️ Status", callback_data="air|status"),
+        InlineKeyboardButton("⬅️ Kembali", callback_data="back|main"),
+    ])
+    return InlineKeyboardMarkup(rows)
+
+
+def _lampu_inline(role: int) -> InlineKeyboardMarkup:
+    if role < ADMIN:
+        return InlineKeyboardMarkup([
+            [InlineKeyboardButton("⬅️ Kembali", callback_data="back|main")]
+        ])
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("🟢 Nyalakan", callback_data="lampu|on"),
+            InlineKeyboardButton("🔴 Matikan", callback_data="lampu|off"),
+        ],
+        [
+            InlineKeyboardButton("ℹ️ Status", callback_data="lampu|status"),
+            InlineKeyboardButton("⬅️ Kembali", callback_data="back|main"),
+        ],
+    ])
+
+
+def _monitoring_inline() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("📊 Status Semua", callback_data="mon|status")],
+        [InlineKeyboardButton("⚡ Info Air", callback_data="mon|airinfo")],
+        [InlineKeyboardButton("📱 Daftar Perangkat", callback_data="mon|devices")],
+        [InlineKeyboardButton("⬅️ Kembali", callback_data="back|main")],
+    ])
+
+
+def _users_inline() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("👥 Daftar User", callback_data="users|list")],
+        [
+            InlineKeyboardButton("➕ Tambah User", callback_data="users|add"),
+            InlineKeyboardButton("➖ Hapus User", callback_data="users|remove"),
+        ],
+        [InlineKeyboardButton("⬅️ Kembali", callback_data="back|main")],
+    ])
+
+
+def _role_select_inline(target_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("💧 User", callback_data=f"role|{target_id}|1"),
+            InlineKeyboardButton("💡 Admin", callback_data=f"role|{target_id}|2"),
+        ],
+        [InlineKeyboardButton("❌ Batal", callback_data="back|main")],
+    ])
+
+
+# ═══════════════════════════════════════════════════════
+#  DECORATORS
+# ═══════════════════════════════════════════════════════
 
 def require_role(min_role: int, action_name: str = "command ini"):
-    """Decorator: minimal role tertentu."""
     def decorator(func):
         async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
             uid = update.effective_user.id
             role = auth.get_role(uid)
             if role >= min_role:
                 return await func(update, context)
-
-            # Pesan penolakan sesuai role
             if role == PUBLIC:
                 await update.message.reply_text(
                     f"🚫 *Akses ditolak*\n\n"
                     f"Anda belum memiliki akses.\n"
                     f"`User ID: {uid}`\n\n"
                     f"Hubungi superadmin untuk mendapatkan akses.",
-                    parse_mode="Markdown"
+                    parse_mode="Markdown",
+                    reply_markup=_main_keyboard(role),
                 )
             elif role == USER and min_role == ADMIN:
                 await update.message.reply_text(
                     f"⛔ *Admin only*\n\n"
                     f"Anda adalah *User* — hanya bisa kontrol **AIR**.\n"
                     f"Kontrol lampu memerlukan role **Admin**.",
-                    parse_mode="Markdown"
+                    parse_mode="Markdown",
+                    reply_markup=_main_keyboard(role),
                 )
             else:
                 await update.message.reply_text(
                     f"⛔ *Akses ditolak*\n\n"
                     f"Anda tidak memiliki izin untuk {action_name}.",
-                    parse_mode="Markdown"
+                    parse_mode="Markdown",
+                    reply_markup=_main_keyboard(role),
                 )
             logger.warning("User %s (role=%s) ditolak untuk %s", uid, ROLE_NAMES.get(role), action_name)
             return
@@ -79,14 +169,15 @@ def require_role(min_role: int, action_name: str = "command ini"):
     return decorator
 
 
-# Alias decorator
-def public_only(func):   return require_role(PUBLIC)(func)
-def user_only(func):     return require_role(USER)(func)
-def admin_only(func):    return require_role(ADMIN)(func)
-def superadmin_only(func): return require_role(SUPERADMIN)(func)
+public_only   = lambda f: require_role(PUBLIC)(f)
+user_only     = lambda f: require_role(USER)(f)
+admin_only    = lambda f: require_role(ADMIN)(f)
+superadmin_only = lambda f: require_role(SUPERADMIN)(f)
 
 
-# ── Helper ──
+# ═══════════════════════════════════════════════════════
+#  HELPERS
+# ═══════════════════════════════════════════════════════
 
 def _is_network_error(result: dict) -> bool:
     msg = result.get("message", "").lower()
@@ -115,17 +206,17 @@ async def _notify_superadmins(
     context: ContextTypes.DEFAULT_TYPE,
     user,
     device_name: str,
-    action: str,  # "on" atau "off"
+    action: str,
     result: dict
 ):
-    """Kirim notifikasi ke semua superadmin saat ada kontrol perangkat (skip jika superadmin)."""
+    """Kirim notifikasi ke semua superadmin (skip jika superadmin yang kontrol)."""
     superadmin_ids = auth.get_superadmin_ids()
     if not superadmin_ids:
         return
 
     role = auth.get_role(user.id)
     if role == SUPERADMIN:
-        return  # Tidak perlu notif jika superadmin yang kontrol
+        return
 
     role_icon = {0: "🌐", 1: "💧", 2: "💡", 3: "👑"}.get(role, "🌐")
     role_name = ROLE_NAMES.get(role, "Publik")
@@ -161,108 +252,63 @@ async def _notify_superadmins(
             logger.warning("Gagal kirim notifikasi ke superadmin %s: %s", admin_id, e)
 
 
-# ──── PUBLIC Commands ────
+# ═══════════════════════════════════════════════════════
+#  COMMANDS (fallback)
+# ═══════════════════════════════════════════════════════
 
 @rate_limit
 @public_only
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """/start — semua orang."""
+    """/start — bersihkan pending state dan tampilkan menu utama."""
+    context.user_data.clear()
     user = update.effective_user.first_name
     uid = update.effective_user.id
-    role = auth.role_name(uid)
-
-    # Build command list sesuai role
-    cmds = "/help  — Panduan 📖\n/whoami — Cek ID & role 🪪"
-    if role == "User":
-        cmds += "\n/airon  — Nyalakan air 💧"
-    elif role in ("Admin", "Superadmin"):
-        cmds += "\n/airon  — Nyalakan air 💧\n/airoff — Matikan air 🔌\n/lampuon — Nyalakan lampu 💡\n/lampuoff — Matikan lampu 🌑"
-    if role == "Superadmin":
-        cmds += "\n/users  — Manajemen user 👑"
+    role = auth.get_role(uid)
 
     await update.message.reply_text(
         f"👋 Halo {user}!\n\n"
         f"🤖 *Bot Smart Home BARDI*\n"
-        f"Role Anda: *{role}*\n\n"
-        f"📋 *Command untuk Anda:*\n{cmds}\n\n"
-        f"_Ketik /help untuk bantuan lengkap._",
-        parse_mode="Markdown"
+        f"Role Anda: *{ROLE_NAMES[role]}*\n\n"
+        f"Pilih menu di bawah untuk mulai:",
+        parse_mode="Markdown",
+        reply_markup=_main_keyboard(role),
     )
 
 
 @rate_limit
 @public_only
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """/help — tampilkan hanya command yang bisa diakses oleh role user."""
     uid = update.effective_user.id
     role = auth.get_role(uid)
     icon = {PUBLIC: "🌐", USER: "💧", ADMIN: "💡", SUPERADMIN: "👑"}.get(role, "🌐")
 
-    lines = [f"📖 *Panduan — {icon} {ROLE_NAMES[role]}*\n"]
+    lines = [
+        f"📖 *Panduan — {icon} {ROLE_NAMES[role]}*\n",
+        "Gunakan tombol menu di bawah untuk mengakses fitur bot.\n",
+        "*📋 Menu Utama:*",
+        "• 💧 Air — Kontrol smart plug",
+        "• 💡 Lampu — Kontrol lampu",
+        "• 📊 Monitoring — Cek status & info daya",
+        "• 🪪 Akun Saya — Lihat ID & role Anda",
+    ]
+    if role == SUPERADMIN:
+        lines.append("• 👑 Manajemen User — Kelola akses user")
 
-    # Publik
     lines.extend([
-        "*ℹ️ Informasi*",
-        "`/start`  — Halaman utama",
-        "`/help`   — Panduan ini",
-        "`/whoami` — Cek User ID & role",
+        "\n*💡 Tips:*",
+        "Ketik `/start` kapan saja untuk kembali ke menu utama.",
     ])
 
-    # Monitoring (semua role)
-    lines.extend([
-        "\n*📊 Monitoring*",
-        "`/status`  — Status perangkat",
-        "`/airinfo` — Daya, arus, voltase",
-        "`/devices` — Info perangkat",
-    ])
-
-    # User: hanya bisa nyalakan air
-    if role >= USER:
-        lines.extend([
-            "\n*💧 Kontrol Air*",
-            "`/airon`  — Nyalakan smart plug",
-        ])
-
-    # Admin & di atasnya: bisa matikan air
-    if role >= ADMIN:
-        lines.extend([
-            "`/airoff` — Matikan smart plug",
-        ])
-
-    # Admin & di atasnya
-    if role >= ADMIN:
-        lines.extend([
-            "\n*💡 Kontrol Lampu*",
-            "`/lampuon`  — Nyalakan lampu",
-            "`/lampuoff` — Matikan lampu",
-        ])
-
-    # Superadmin saja
-    if role >= SUPERADMIN:
-        lines.extend([
-            "\n*👑 Manajemen User*",
-            "`/users`                   — Daftar semua user",
-            "`/allowuser <id> <role>`   — Tambah/ubah role user",
-            "`/removeuser <id>`         — Hapus user",
-            "\n*📋 Kode Role:*",
-            "`1` → 💧 User (nyalakan air)",
-            "`2` → 💡 Admin (kontrol lampu + air)",
-        ])
-
-    # Footer untuk publik
-    if role == PUBLIC:
-        lines.extend([
-            "\n_💡 Anda belum memiliki akses kontrol._",
-            "_Kirim User ID ke superadmin untuk minta akses._",
-        ])
-
-    await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+    await update.message.reply_text(
+        "\n".join(lines),
+        parse_mode="Markdown",
+        reply_markup=_main_keyboard(role),
+    )
 
 
 @rate_limit
 @public_only
 async def whoami_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """/whoami — semua orang."""
     user = update.effective_user
     role = auth.get_role(user.id)
     role_icon = {PUBLIC: "🌐", USER: "💧", ADMIN: "💡", SUPERADMIN: "👑"}.get(role, "🌐")
@@ -274,11 +320,14 @@ async def whoami_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"*Username*: `@{user.username or 'none'}`\n\n"
         f"*Role*    : {role_icon} *{ROLE_NAMES[role]}*\n\n"
         f"_User ID di atas bisa Anda kirim ke superadmin untuk minta akses._",
-        parse_mode="Markdown"
+        parse_mode="Markdown",
+        reply_markup=_main_keyboard(role),
     )
 
 
-# ──── USER Commands — hanya bisa NYALAKAN air ────
+# ═══════════════════════════════════════════════════════
+#  LEGACY DEVICE COMMANDS (fallback)
+# ═══════════════════════════════════════════════════════
 
 @rate_limit
 @user_only
@@ -288,8 +337,6 @@ async def air_on(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await _send_control_result(update, result, "air")
     await _notify_superadmins(context, update.effective_user, "air", "on", result)
 
-
-# ──── ADMIN Commands — bisa MATIKAN air + kontrol lampu ────
 
 @rate_limit
 @admin_only
@@ -318,8 +365,6 @@ async def lampu_off(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await _notify_superadmins(context, update.effective_user, "lampu", "off", result)
 
 
-# ──── SHARED Monitoring (semua role yang login) ────
-
 @public_only
 async def air_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("⚡ Membaca data meteran smart plug...")
@@ -342,10 +387,8 @@ async def air_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
 @rate_limit
 @public_only
 async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """/status — tampilkan ON/OFF saja, tanpa DPS detail."""
     await update.message.reply_text("📊 Mengecek status perangkat...")
     lines = ["📊 *Status Perangkat*\n"]
-
     for name, label, emoji in [("lampu", "Lampu", "💡"), ("air", "Air", "💧")]:
         result = tuya.get_status(name)
         if result["success"]:
@@ -357,28 +400,25 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 state = "⚪ Tidak diketahui"
         else:
             state = "⚪ Offline"
-
         lines.append(f"{emoji} *{label}*: {state}")
-
     await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
 
 
 @rate_limit
 @public_only
 async def devices_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """/devices — list perangkat: nama & tipe saja."""
     devices = tuya.list_devices()
     lines = ["📱 *Perangkat Tersedia*\n"]
-
     for dev in devices:
         icon = "💡" if dev["type"] == "bulb" else "🔌"
         tipe = "Lampu" if dev["type"] == "bulb" else "Smart Plug"
         lines.append(f"{icon} *{dev['name'].title()}* — {tipe}")
-
     await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
 
 
-# ──── SUPERADMIN Commands ────
+# ═══════════════════════════════════════════════════════
+#  SUPERADMIN COMMANDS (fallback)
+# ═══════════════════════════════════════════════════════
 
 @rate_limit
 @superadmin_only
@@ -423,29 +463,24 @@ async def allowuser_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args or len(context.args) < 1:
         await update.message.reply_text(
             "ℹ️ *Cara pakai:*\n"
-            "`/allowuser <user_id> 1` — Jadikan 💧 User (bisa nyalakan air)\n"
-            "`/allowuser <user_id> 2` — Jadikan 💡 Admin (kontrol lampu + air)\n\n"
-            "_User bisa cek ID mereka via `/whoami`_",
+            "`/allowuser <user_id> 1` — Jadikan 💧 User\n"
+            "`/allowuser <user_id> 2` — Jadikan 💡 Admin\n\n"
+            "_User bisa cek ID mereka via 🪪 Akun Saya_",
             parse_mode="Markdown"
         )
         return
-
     try:
         target_id = int(context.args[0].strip())
         role_input = int(context.args[1].strip()) if len(context.args) > 1 else USER
     except ValueError:
         await update.message.reply_text("❌ User ID dan role harus angka.")
         return
-
     if role_input not in (USER, ADMIN):
         await update.message.reply_text(
-            "❌ Role tidak valid.\n\n"
-            "`1` = 💧 User (nyalakan air)\n"
-            "`2` = 💡 Admin (kontrol lampu + air)",
+            "❌ Role tidak valid.\n\n`1` = 💧 User\n`2` = 💡 Admin",
             parse_mode="Markdown"
         )
         return
-
     if auth.set_role(target_id, role_input):
         rname = ROLE_NAMES[role_input]
         await update.message.reply_text(
@@ -455,7 +490,7 @@ async def allowuser_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.info("Superadmin %s set user %s as %s", update.effective_user.id, target_id, rname)
     else:
         await update.message.reply_text(
-            "❌ Gagal. User mungkin sudah di-set via ENV (tidak bisa diubah runtime).",
+            "❌ Gagal. User mungkin sudah di-set via ENV.",
             parse_mode="Markdown"
         )
 
@@ -466,13 +501,11 @@ async def removeuser_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if not context.args:
         await update.message.reply_text("ℹ️ *Cara pakai:* `/removeuser <user_id>`", parse_mode="Markdown")
         return
-
     try:
         target_id = int(context.args[0].strip())
     except ValueError:
         await update.message.reply_text("❌ User ID harus angka.")
         return
-
     if auth.remove_user(target_id):
         await update.message.reply_text(f"✅ User `{target_id}` dihapus.", parse_mode="Markdown")
         logger.info("Superadmin %s hapus user %s", update.effective_user.id, target_id)
@@ -483,29 +516,382 @@ async def removeuser_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
 
 
-# ──── Unknown Message Handler ────
+# ═══════════════════════════════════════════════════════
+#  MENU HANDLER (ReplyKeyboard)
+# ═══════════════════════════════════════════════════════
+
+async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle tombol menu utama."""
+    text = update.message.text.strip()
+    uid = update.effective_user.id
+    role = auth.get_role(uid)
+
+    # ── Interactive flow: tambah user ──
+    if context.user_data.get("awaiting_add_user_id"):
+        await _flow_add_user_id(update, context)
+        return
+
+    # ── Interactive flow: hapus user ──
+    if context.user_data.get("awaiting_remove_user_id"):
+        await _flow_remove_user_id(update, context)
+        return
+
+    # ── 💧 Air ──
+    if text == "💧 Air":
+        if role < USER:
+            await update.message.reply_text(
+                "🚫 Anda belum memiliki akses kontrol air.",
+                reply_markup=_main_keyboard(role),
+            )
+            return
+        await update.message.reply_text(
+            "💧 *Kontrol Air*\nPilih aksi:",
+            parse_mode="Markdown",
+            reply_markup=_air_inline(role),
+        )
+
+    # ── 💡 Lampu ──
+    elif text == "💡 Lampu":
+        if role < ADMIN:
+            await update.message.reply_text(
+                "⛔ Anda tidak memiliki akses kontrol lampu.",
+                reply_markup=_main_keyboard(role),
+            )
+            return
+        await update.message.reply_text(
+            "💡 *Kontrol Lampu*\nPilih aksi:",
+            parse_mode="Markdown",
+            reply_markup=_lampu_inline(role),
+        )
+
+    # ── 📊 Monitoring ──
+    elif text == "📊 Monitoring":
+        await update.message.reply_text(
+            "📊 *Monitoring*\nPilih informasi:",
+            parse_mode="Markdown",
+            reply_markup=_monitoring_inline(),
+        )
+
+    # ── 🪪 Akun Saya ──
+    elif text == "🪪 Akun Saya":
+        await whoami_command(update, context)
+
+    # ── 👑 Manajemen User ──
+    elif text == "👑 Manajemen User":
+        if role < SUPERADMIN:
+            await update.message.reply_text(
+                "⛔ Akses ditolak.",
+                reply_markup=_main_keyboard(role),
+            )
+            return
+        await update.message.reply_text(
+            "👑 *Manajemen User*\nPilih aksi:",
+            parse_mode="Markdown",
+            reply_markup=_users_inline(),
+        )
+
+    # ── 📖 Bantuan ──
+    elif text == "📖 Bantuan":
+        await help_command(update, context)
+
+    # ── Unknown text ──
+    else:
+        await unknown_message(update, context)
+
+
+# ═══════════════════════════════════════════════════════
+#  CALLBACK HANDLER (InlineKeyboard)
+# ═══════════════════════════════════════════════════════
+
+async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    data = query.data
+    uid = update.effective_user.id
+    role = auth.get_role(uid)
+
+    try:
+        if data.startswith("air|"):
+            await _callback_air(query, context, data.split("|")[1], role)
+        elif data.startswith("lampu|"):
+            await _callback_lampu(query, context, data.split("|")[1], role)
+        elif data.startswith("mon|"):
+            await _callback_mon(query, context, data.split("|")[1])
+        elif data.startswith("users|"):
+            await _callback_users(query, context, data.split("|")[1], role)
+        elif data.startswith("role|"):
+            _, target_id, role_input = data.split("|")
+            await _callback_role_confirm(query, context, int(target_id), int(role_input))
+        elif data == "back|main":
+            try:
+                await query.edit_message_reply_markup(reply_markup=None)
+                await query.edit_message_text(
+                    "🏠 *Menu Utama*\nPilih menu di bawah:",
+                    parse_mode="Markdown",
+                )
+            except Exception:
+                pass
+    except Exception as e:
+        logger.error("Error callback %s: %s", data, e)
+        try:
+            await query.message.reply_text("⚠️ Terjadi kesalahan. Coba lagi.")
+        except Exception:
+            pass
+
+
+# ── Callback: Air ──
+async def _callback_air(query, context, action: str, role: int):
+    if action == "on" and role >= USER:
+        result = tuya.turn_on("air")
+        await query.message.reply_text(result["message"])
+        await _notify_superadmins(context, query.from_user, "air", "on", result)
+    elif action == "off" and role >= ADMIN:
+        result = tuya.turn_off("air")
+        await query.message.reply_text(result["message"])
+        await _notify_superadmins(context, query.from_user, "air", "off", result)
+    elif action == "status":
+        result = tuya.get_status("air")
+        if result["success"]:
+            dps = result.get("status", {})
+            switch_val = dps.get("1") if isinstance(dps, dict) else None
+            state = "🟢 NYALA" if switch_val else "🔴 MATI"
+            await query.message.reply_text(f"💧 *Status Air*: {state}", parse_mode="Markdown")
+        else:
+            await query.message.reply_text("❌ Gagal membaca status air.")
+    else:
+        await query.answer("⛔ Akses ditolak.", show_alert=True)
+
+
+# ── Callback: Lampu ──
+async def _callback_lampu(query, context, action: str, role: int):
+    if role < ADMIN:
+        await query.answer("⛔ Admin only.", show_alert=True)
+        return
+    if action == "on":
+        result = tuya.turn_on("lampu")
+        await query.message.reply_text(result["message"])
+        await _notify_superadmins(context, query.from_user, "lampu", "on", result)
+    elif action == "off":
+        result = tuya.turn_off("lampu")
+        await query.message.reply_text(result["message"])
+        await _notify_superadmins(context, query.from_user, "lampu", "off", result)
+    elif action == "status":
+        result = tuya.get_status("lampu")
+        if result["success"]:
+            dps = result.get("status", {})
+            switch_val = dps.get("20") if isinstance(dps, dict) else None
+            state = "🟢 NYALA" if switch_val else "🔴 MATI"
+            await query.message.reply_text(f"💡 *Status Lampu*: {state}", parse_mode="Markdown")
+        else:
+            await query.message.reply_text("❌ Gagal membaca status lampu.")
+
+
+# ── Callback: Monitoring ──
+async def _callback_mon(query, context, action: str):
+    if action == "status":
+        lines = ["📊 *Status Perangkat*\n"]
+        for name, label, emoji in [("lampu", "Lampu", "💡"), ("air", "Air", "💧")]:
+            result = tuya.get_status(name)
+            if result["success"]:
+                dps = result.get("status", {})
+                if isinstance(dps, dict):
+                    switch_val = dps.get("20") if name == "lampu" else dps.get("1")
+                    state = "🟢 NYALA" if switch_val else "🔴 MATI"
+                else:
+                    state = "⚪ Tidak diketahui"
+            else:
+                state = "⚪ Offline"
+            lines.append(f"{emoji} *{label}*: {state}")
+        await query.message.reply_text("\n".join(lines), parse_mode="Markdown")
+
+    elif action == "airinfo":
+        result = tuya.get_power_info("air")
+        if result["success"]:
+            await query.message.reply_text(
+                f"⚡ *COK AIR - Power Monitor*\n\n"
+                f"🔌 *Daya*    : `{result['power_w']}` W\n"
+                f"⚡ *Arus*    : `{result['current_a']}` A\n"
+                f"🔋 *Voltase* : `{result['voltage_v']}` V",
+                parse_mode="Markdown"
+            )
+        else:
+            await query.message.reply_text(f"❌ Gagal membaca data meteran.")
+
+    elif action == "devices":
+        devices = tuya.list_devices()
+        lines = ["📱 *Perangkat Tersedia*\n"]
+        for dev in devices:
+            icon = "💡" if dev["type"] == "bulb" else "🔌"
+            tipe = "Lampu" if dev["type"] == "bulb" else "Smart Plug"
+            lines.append(f"{icon} *{dev['name'].title()}* — {tipe}")
+        await query.message.reply_text("\n".join(lines), parse_mode="Markdown")
+
+
+# ── Callback: Users ──
+async def _callback_users(query, context, action: str, role: int):
+    if role < SUPERADMIN:
+        await query.answer("⛔ Superadmin only.", show_alert=True)
+        return
+
+    if action == "list":
+        data = auth.list_users()
+        lines = ["👥 *Daftar User*\n"]
+        lines.append("*👑 Superadmin (ENV):*")
+        for uid in sorted(data["env"].keys()):
+            if data["env"][uid] == SUPERADMIN:
+                lines.append(f"  • `{uid}`")
+        if not any(r == SUPERADMIN for r in data["env"].values()):
+            lines.append("  _(kosong)_")
+
+        lines.append("\n*💡 Admin (ENV):*")
+        for uid in sorted(data["env"].keys()):
+            if data["env"][uid] == ADMIN:
+                lines.append(f"  • `{uid}`")
+        if not any(r == ADMIN for r in data["env"].values()):
+            lines.append("  _(kosong)_")
+
+        lines.append("\n*💧 User (ENV):*")
+        for uid in sorted(data["env"].keys()):
+            if data["env"][uid] == USER:
+                lines.append(f"  • `{uid}`")
+        if not any(r == USER for r in data["env"].values()):
+            lines.append("  _(kosong)_")
+
+        lines.append("\n*➕ Runtime (database):*")
+        if data["runtime"]:
+            for uid, role_val in sorted(data["runtime"].items()):
+                lines.append(f"  • `{uid}` → {ROLE_NAMES.get(role_val, '?')}")
+        else:
+            lines.append("  _(kosong)_")
+        await query.message.reply_text("\n".join(lines), parse_mode="Markdown")
+
+    elif action == "add":
+        await query.message.reply_text(
+            "➕ *Tambah User*\n\n"
+            "Kirimkan *User ID* yang ingin ditambahkan.\n"
+            "User bisa cek ID mereka via menu 🪪 Akun Saya.\n\n"
+            "_Ketik ID sebagai angka, contoh: `8559106318`_",
+            parse_mode="Markdown",
+        )
+        context.user_data["awaiting_add_user_id"] = True
+
+    elif action == "remove":
+        await query.message.reply_text(
+            "➖ *Hapus User*\n\n"
+            "Kirimkan *User ID* yang ingin dihapus.\n\n"
+            "_Ketik ID sebagai angka._",
+            parse_mode="Markdown",
+        )
+        context.user_data["awaiting_remove_user_id"] = True
+
+
+async def _callback_role_confirm(query, context, target_id: int, role_input: int):
+    if role_input not in (USER, ADMIN):
+        await query.answer("Role tidak valid.", show_alert=True)
+        return
+    if auth.set_role(target_id, role_input):
+        rname = ROLE_NAMES[role_input]
+        await query.edit_message_text(
+            f"✅ User `{target_id}` berhasil di-set sebagai *{rname}*.",
+            parse_mode="Markdown",
+        )
+        logger.info("Superadmin %s set user %s as %s", query.from_user.id, target_id, rname)
+    else:
+        await query.edit_message_text(
+            "❌ Gagal. User mungkin sudah di-set via ENV.",
+            parse_mode="Markdown",
+        )
+
+
+# ═══════════════════════════════════════════════════════
+#  INTERACTIVE FLOWS (text input setelah tombol inline)
+# ═══════════════════════════════════════════════════════
+
+async def _flow_add_user_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text.strip()
+    context.user_data.pop("awaiting_add_user_id", None)
+    role = auth.get_role(update.effective_user.id)
+
+    try:
+        target_id = int(text)
+    except ValueError:
+        await update.message.reply_text(
+            "❌ ID harus berupa angka. Coba lagi.",
+            reply_markup=_users_inline(),
+        )
+        return
+
+    if auth.get_role(target_id) != PUBLIC:
+        await update.message.reply_text(
+            f"⚠️ User `{target_id}` sudah terdaftar.",
+            parse_mode="Markdown",
+            reply_markup=_users_inline(),
+        )
+        return
+
+    await update.message.reply_text(
+        f"👤 User ID: `{target_id}`\n\nPilih role:",
+        parse_mode="Markdown",
+        reply_markup=_role_select_inline(target_id),
+    )
+
+
+async def _flow_remove_user_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text.strip()
+    context.user_data.pop("awaiting_remove_user_id", None)
+
+    try:
+        target_id = int(text)
+    except ValueError:
+        await update.message.reply_text(
+            "❌ ID harus berupa angka. Coba lagi.",
+            reply_markup=_users_inline(),
+        )
+        return
+
+    if auth.remove_user(target_id):
+        await update.message.reply_text(
+            f"✅ User `{target_id}` berhasil dihapus.",
+            parse_mode="Markdown",
+            reply_markup=_users_inline(),
+        )
+        logger.info("Superadmin %s hapus user %s", update.effective_user.id, target_id)
+    else:
+        await update.message.reply_text(
+            "❌ Gagal. User tidak ada atau berasal dari ENV.",
+            reply_markup=_users_inline(),
+        )
+
+
+# ═══════════════════════════════════════════════════════
+#  UNKNOWN MESSAGE
+# ═══════════════════════════════════════════════════════
 
 async def unknown_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Balas jika user kirim teks/command yang tidak dikenal."""
     text = update.message.text.strip() if update.message.text else ""
+    role = auth.get_role(update.effective_user.id)
 
-    # Jika diawali / tapi tidak cocok handler di atas
     if text.startswith("/"):
         await update.message.reply_text(
             f"❓ *Command tidak dikenal:* `{text.split()[0]}`\n\n"
-            f"Ketik `/help` untuk melihat command yang tersedia.",
-            parse_mode="Markdown"
+            f"Gunakan tombol menu atau ketik `/help`.",
+            parse_mode="Markdown",
+            reply_markup=_main_keyboard(role),
         )
     else:
         await update.message.reply_text(
             f"👋 Hai {update.effective_user.first_name}!\n\n"
             f"Saya tidak mengerti pesan itu.\n"
-            f"Ketik `/help` untuk melihat command yang bisa digunakan.",
-            parse_mode="Markdown"
+            f"Gunakan tombol menu di bawah atau ketik `/help`.",
+            parse_mode="Markdown",
+            reply_markup=_main_keyboard(role),
         )
 
 
-# ──── Error Handler ────
+# ═══════════════════════════════════════════════════════
+#  ERROR HANDLER
+# ═══════════════════════════════════════════════════════
 
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.error("Update %s caused error %s", update, context.error)
@@ -513,7 +899,9 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⚠️ Terjadi kesalahan. Coba lagi nanti.")
 
 
-# ──── Main ────
+# ═══════════════════════════════════════════════════════
+#  MAIN
+# ═══════════════════════════════════════════════════════
 
 def main():
     from config import validate_config
@@ -528,35 +916,37 @@ def main():
     logger.info("Memulai bot Telegram...")
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
-    # ── Publik ──
+    # ── Commands ──
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("whoami", whoami_command))
 
-    # ── User (kontrol air) ──
+    # Legacy device commands
     application.add_handler(CommandHandler("airon", air_on))
     application.add_handler(CommandHandler("airoff", air_off))
-
-    # ── Admin (kontrol lampu + air) ──
     application.add_handler(CommandHandler("lampuon", lampu_on))
     application.add_handler(CommandHandler("lampuoff", lampu_off))
 
-    # ── Monitoring (semua) ──
+    # Legacy monitoring commands
     application.add_handler(CommandHandler("status", status_command))
     application.add_handler(CommandHandler("airinfo", air_info))
     application.add_handler(CommandHandler("devices", devices_command))
 
-    # ── Superadmin (manajemen) ──
+    # Legacy superadmin commands
     application.add_handler(CommandHandler("users", users_command))
     application.add_handler(CommandHandler("allowuser", allowuser_command))
     application.add_handler(CommandHandler("removeuser", removeuser_command))
 
-    # Catch-all: teks atau command yang tidak dikenal
+    # ── Callback Queries (inline buttons) ──
+    application.add_handler(CallbackQueryHandler(callback_handler))
+
+    # ── Text menu (ReplyKeyboard) ──
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, menu_handler))
+
+    # ── Fallback ──
     application.add_handler(MessageHandler(filters.TEXT | filters.COMMAND, unknown_message))
 
     application.add_error_handler(error_handler)
-
-    # Jalankan polling (built-in signal handler, Ctrl+C langsung stop)
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
