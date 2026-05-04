@@ -74,27 +74,19 @@ def _air_inline(role: int) -> InlineKeyboardMarkup:
     if role >= ADMIN:
         btns.append(InlineKeyboardButton("🔴 Matikan", callback_data="air|off"))
     rows = [btns] if btns else []
-    rows.append([
-        InlineKeyboardButton("ℹ️ Status", callback_data="air|status"),
-        InlineKeyboardButton("⬅️ Kembali", callback_data="back|main"),
-    ])
+    rows.append([InlineKeyboardButton("ℹ️ Status", callback_data="air|status")])
     return InlineKeyboardMarkup(rows)
 
 
 def _lampu_inline(role: int) -> InlineKeyboardMarkup:
     if role < ADMIN:
-        return InlineKeyboardMarkup([
-            [InlineKeyboardButton("⬅️ Kembali", callback_data="back|main")]
-        ])
+        return InlineKeyboardMarkup([])
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton("🟢 Nyalakan", callback_data="lampu|on"),
             InlineKeyboardButton("🔴 Matikan", callback_data="lampu|off"),
         ],
-        [
-            InlineKeyboardButton("ℹ️ Status", callback_data="lampu|status"),
-            InlineKeyboardButton("⬅️ Kembali", callback_data="back|main"),
-        ],
+        [InlineKeyboardButton("ℹ️ Status", callback_data="lampu|status")],
     ])
 
 
@@ -103,7 +95,6 @@ def _monitoring_inline() -> InlineKeyboardMarkup:
         [InlineKeyboardButton("📊 Status Semua", callback_data="mon|status")],
         [InlineKeyboardButton("⚡ Info Air", callback_data="mon|airinfo")],
         [InlineKeyboardButton("📱 Daftar Perangkat", callback_data="mon|devices")],
-        [InlineKeyboardButton("⬅️ Kembali", callback_data="back|main")],
     ])
 
 
@@ -114,7 +105,6 @@ def _users_inline() -> InlineKeyboardMarkup:
             InlineKeyboardButton("➕ Tambah User", callback_data="users|add"),
             InlineKeyboardButton("➖ Hapus User", callback_data="users|remove"),
         ],
-        [InlineKeyboardButton("⬅️ Kembali", callback_data="back|main")],
     ])
 
 
@@ -124,7 +114,6 @@ def _role_select_inline(target_id: int) -> InlineKeyboardMarkup:
             InlineKeyboardButton("💧 User", callback_data=f"role|{target_id}|1"),
             InlineKeyboardButton("💡 Admin", callback_data=f"role|{target_id}|2"),
         ],
-        [InlineKeyboardButton("❌ Batal", callback_data="back|main")],
     ])
 
 
