@@ -13,7 +13,7 @@ def scan_devices():
     print("=" * 50)
     
     # Scan network
-    devices = tinytuya.deviceScan(verbose=False, scantime=15)
+    devices = tinytuya.deviceScan(verbose=False, maxretry=15)
     
     if not devices:
         print("❌ Tidak ada perangkat Tuya ditemukan.")
