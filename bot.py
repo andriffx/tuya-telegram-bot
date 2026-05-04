@@ -365,7 +365,7 @@ async def lampu_off(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await _notify_superadmins(context, update.effective_user, "lampu", "off", result)
 
 
-@public_only
+@user_only
 async def air_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("⚡ Membaca data meteran smart plug...")
     result = tuya.get_power_info("air")
@@ -385,7 +385,7 @@ async def air_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 @rate_limit
-@public_only
+@user_only
 async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("📊 Mengecek status perangkat...")
     lines = ["📊 *Status Perangkat*\n"]
@@ -405,7 +405,7 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 @rate_limit
-@public_only
+@user_only
 async def devices_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     devices = tuya.list_devices()
     lines = ["📱 *Perangkat Tersedia*\n"]
