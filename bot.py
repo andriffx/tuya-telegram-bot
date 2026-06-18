@@ -92,8 +92,7 @@ def _lampu_inline(role: int) -> InlineKeyboardMarkup:
 
 def _monitoring_inline() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("📊 Status Semua", callback_data="mon|status")],
-        [InlineKeyboardButton("⚡ Info Air", callback_data="mon|airinfo")],
+        [InlineKeyboardButton("📊 Status Perangkat IOT", callback_data="mon|status")],
         [InlineKeyboardButton("📱 Daftar Perangkat", callback_data="mon|devices")],
     ])
 
@@ -277,7 +276,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "*📋 Menu Utama:*",
         "• 💧 Air — Kontrol smart plug",
         "• 💡 Lampu — Kontrol lampu",
-        "• 📊 Monitoring — Cek status & info daya",
+        "• 📊 Monitoring — Cek status perangkat",
         "• 🪪 Akun Saya — Lihat ID & role Anda",
     ]
     if role == SUPERADMIN:
@@ -640,12 +639,19 @@ async def _callback_air(query, context, action: str, role: int):
         await query.message.reply_text(result["message"])
         await _notify_superadmins(context, query.from_user, "air", "off", result)
     elif action == "status":
-        result = tuya.get_status("air")
+        result = tuya.get_power_info("air")
         if result["success"]:
-            dps = result.get("status", {})
+            dps = result.get("raw", {})
             switch_val = dps.get("1") if isinstance(dps, dict) else None
             state = "🟢 NYALA" if switch_val else "🔴 MATI"
-            await query.message.reply_text(f"💧 *Status Air*: {state}", parse_mode="Markdown")
+            await query.message.reply_text(
+                f"💧 *Status Air*: {state}\n"
+                f"⚡ *COK AIR - Power Monitor*\n\n"
+                f"🔌 *Daya*    : `{result['power_w']}` W\n"
+                f"⚡ *Arus*    : `{result['current_a']}` A\n"
+                f"🔋 *Voltase* : `{result['voltage_v']}` V",
+                parse_mode="Markdown",
+            )
         else:
             await query.message.reply_text("❌ Gagal membaca status air.")
     else:
@@ -693,19 +699,6 @@ async def _callback_mon(query, context, action: str):
                 state = "⚪ Offline"
             lines.append(f"{emoji} *{label}*: {state}")
         await query.message.reply_text("\n".join(lines), parse_mode="Markdown")
-
-    elif action == "airinfo":
-        result = tuya.get_power_info("air")
-        if result["success"]:
-            await query.message.reply_text(
-                f"⚡ *COK AIR - Power Monitor*\n\n"
-                f"🔌 *Daya*    : `{result['power_w']}` W\n"
-                f"⚡ *Arus*    : `{result['current_a']}` A\n"
-                f"🔋 *Voltase* : `{result['voltage_v']}` V",
-                parse_mode="Markdown"
-            )
-        else:
-            await query.message.reply_text(f"❌ Gagal membaca data meteran.")
 
     elif action == "devices":
         devices = tuya.list_devices()
