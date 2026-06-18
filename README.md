@@ -86,7 +86,6 @@ python bot.py
 | `/help` | Panduan sesuai role |
 | `/whoami` | Cek User ID & role |
 | `/status` | Status perangkat (ON/OFF) |
-| `/airinfo` | Monitoring daya, arus, voltase |
 | `/devices` | Daftar perangkat |
 
 ### 💧 Role: User
