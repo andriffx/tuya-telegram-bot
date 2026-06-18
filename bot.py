@@ -353,25 +353,6 @@ async def lampu_off(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await _notify_superadmins(context, update.effective_user, "lampu", "off", result)
 
 
-@user_only
-async def air_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("⚡ Membaca data meteran smart plug...")
-    result = tuya.get_power_info("air")
-    if result["success"]:
-        await update.message.reply_text(
-            f"⚡ *COK AIR - Power Monitor*\n\n"
-            f"🔌 *Daya*    : `{result['power_w']}` W\n"
-            f"⚡ *Arus*    : `{result['current_a']}` A\n"
-            f"🔋 *Voltase* : `{result['voltage_v']}` V",
-            parse_mode="Markdown"
-        )
-    else:
-        await update.message.reply_text(
-            f"❌ Gagal membaca:\n`{result.get('message', 'Unknown')}`",
-            parse_mode="Markdown"
-        )
-
-
 @rate_limit
 @user_only
 async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -911,7 +892,6 @@ def main():
 
     # Legacy monitoring commands
     application.add_handler(CommandHandler("status", status_command))
-    application.add_handler(CommandHandler("airinfo", air_info))
     application.add_handler(CommandHandler("devices", devices_command))
 
     # Legacy superadmin commands
