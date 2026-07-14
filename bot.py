@@ -195,22 +195,32 @@ def _is_network_error(result: dict) -> bool:
     return any(k in msg for k in ["unable to connect", "network error", "timeout", "connection refused"])
 
 
-async def _send_control_result(update: Update, result: dict, device_name: str):
+def _control_result_text(result: dict, device_name: str) -> tuple[str, str | None]:
+    """Return (text, parse_mode) untuk pesan hasil kontrol perangkat."""
     if result["success"]:
-        await update.message.reply_text(result["message"])
-        return
+        return result["message"], None
     if _is_network_error(result):
-        await update.message.reply_text(
+        return (
             f"❌ *{device_name.upper()} tidak terhubung*\n\n"
             f"_Error:_ `{result.get('message', 'Network Error')}`\n\n"
             f"🔍 *Cek:*\n"
             f"• Bot & perangkat di jaringan WiFi yang sama?\n"
             f"• Perangkat masih nyala & terhubung WiFi?\n"
             f"• IP perangkat sudah benar?",
-            parse_mode="Markdown"
+            "Markdown",
         )
-    else:
-        await update.message.reply_text(result["message"])
+    return result["message"], None
+
+
+async def _finalize_control_message(message, result: dict, device_name: str, fallback_chat=None):
+    """Edit pesan pending jadi hasil akhir; fallback kirim pesan baru jika edit gagal."""
+    text, parse_mode = _control_result_text(result, device_name)
+    try:
+        await message.edit_text(text, parse_mode=parse_mode)
+    except Exception as e:
+        logger.warning("Gagal edit pesan kontrol: %s", e)
+        if fallback_chat:
+            await fallback_chat.reply_text(text, parse_mode=parse_mode)
 
 
 async def _notify_superadmins(
@@ -271,10 +281,10 @@ async def _control_device_callback(
     pending_msg: str,
     method,
 ):
-    """Kontrol perangkat via inline button: feedback instan → Tuya → hasil → notif admin (background)."""
-    await query.message.reply_text(pending_msg)
+    """Kontrol via inline button: kirim pending → Tuya → edit pesan jadi hasil."""
+    status_msg = await query.message.reply_text(pending_msg)
     result = await _run_tuya(method, device_name)
-    await query.message.reply_text(result["message"])
+    await _finalize_control_message(status_msg, result, device_name, query.message)
     asyncio.create_task(
         _notify_superadmins(context, query.from_user, device_name, action, result)
     )
@@ -288,10 +298,10 @@ async def _control_device_command(
     pending_msg: str,
     method,
 ):
-    """Kontrol perangkat via command: feedback instan → Tuya → hasil → notif admin (background)."""
-    await update.message.reply_text(pending_msg)
+    """Kontrol via command: kirim pending → Tuya → edit pesan jadi hasil."""
+    status_msg = await update.message.reply_text(pending_msg)
     result = await _run_tuya(method, device_name)
-    await _send_control_result(update, result, device_name)
+    await _finalize_control_message(status_msg, result, device_name, update.message)
     asyncio.create_task(
         _notify_superadmins(context, update.effective_user, device_name, action, result)
     )
