@@ -282,11 +282,3 @@ python test_connection.py
 ## 📄 Lisensi
 
 MIT License — lihat [LICENSE](LICENSE) untuk detail.
-
----
-
-<div align="center">
-
-**Dibuat dengan ❤️ untuk smart home Indonesia**
-
-</div>
