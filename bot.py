@@ -263,6 +263,40 @@ async def _notify_superadmins(
             logger.warning("Gagal kirim notifikasi ke superadmin %s: %s", admin_id, e)
 
 
+async def _control_device_callback(
+    query,
+    context: ContextTypes.DEFAULT_TYPE,
+    device_name: str,
+    action: str,
+    pending_msg: str,
+    method,
+):
+    """Kontrol perangkat via inline button: feedback instan → Tuya → hasil → notif admin (background)."""
+    await query.message.reply_text(pending_msg)
+    result = await _run_tuya(method, device_name)
+    await query.message.reply_text(result["message"])
+    asyncio.create_task(
+        _notify_superadmins(context, query.from_user, device_name, action, result)
+    )
+
+
+async def _control_device_command(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    device_name: str,
+    action: str,
+    pending_msg: str,
+    method,
+):
+    """Kontrol perangkat via command: feedback instan → Tuya → hasil → notif admin (background)."""
+    await update.message.reply_text(pending_msg)
+    result = await _run_tuya(method, device_name)
+    await _send_control_result(update, result, device_name)
+    asyncio.create_task(
+        _notify_superadmins(context, update.effective_user, device_name, action, result)
+    )
+
+
 # ═══════════════════════════════════════════════════════
 #  COMMANDS (fallback)
 # ═══════════════════════════════════════════════════════
@@ -343,37 +377,33 @@ async def whoami_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 @rate_limit
 @user_only
 async def air_on(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("💧 Menyalakan air...")
-    result = await _run_tuya(tuya.turn_on, "air")
-    await _send_control_result(update, result, "air")
-    await _notify_superadmins(context, update.effective_user, "air", "on", result)
+    await _control_device_command(
+        update, context, "air", "on", "💧 Menyalakan air...", tuya.turn_on
+    )
 
 
 @rate_limit
 @admin_only
 async def air_off(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🔌 Mematikan air...")
-    result = await _run_tuya(tuya.turn_off, "air")
-    await _send_control_result(update, result, "air")
-    await _notify_superadmins(context, update.effective_user, "air", "off", result)
+    await _control_device_command(
+        update, context, "air", "off", "🔌 Mematikan air...", tuya.turn_off
+    )
 
 
 @rate_limit
 @admin_only
 async def lampu_on(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("💡 Menyalakan lampu...")
-    result = await _run_tuya(tuya.turn_on, "lampu")
-    await _send_control_result(update, result, "lampu")
-    await _notify_superadmins(context, update.effective_user, "lampu", "on", result)
+    await _control_device_command(
+        update, context, "lampu", "on", "💡 Menyalakan lampu...", tuya.turn_on
+    )
 
 
 @rate_limit
 @admin_only
 async def lampu_off(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🌑 Mematikan lampu...")
-    result = await _run_tuya(tuya.turn_off, "lampu")
-    await _send_control_result(update, result, "lampu")
-    await _notify_superadmins(context, update.effective_user, "lampu", "off", result)
+    await _control_device_command(
+        update, context, "lampu", "off", "🌑 Mematikan lampu...", tuya.turn_off
+    )
 
 
 @rate_limit
@@ -639,13 +669,13 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ── Callback: Air ──
 async def _callback_air(query, context, action: str, role: int):
     if action == "on" and role >= USER:
-        result = await _run_tuya(tuya.turn_on, "air")
-        await query.message.reply_text(result["message"])
-        await _notify_superadmins(context, query.from_user, "air", "on", result)
+        await _control_device_callback(
+            query, context, "air", "on", "💧 Menyalakan air...", tuya.turn_on
+        )
     elif action == "off" and role >= ADMIN:
-        result = await _run_tuya(tuya.turn_off, "air")
-        await query.message.reply_text(result["message"])
-        await _notify_superadmins(context, query.from_user, "air", "off", result)
+        await _control_device_callback(
+            query, context, "air", "off", "🔌 Mematikan air...", tuya.turn_off
+        )
     elif action == "status":
         result = await _run_tuya(tuya.get_power_info, "air")
         if result["success"]:
@@ -672,13 +702,13 @@ async def _callback_lampu(query, context, action: str, role: int):
         await query.message.reply_text("⛔ Admin only.")
         return
     if action == "on":
-        result = await _run_tuya(tuya.turn_on, "lampu")
-        await query.message.reply_text(result["message"])
-        await _notify_superadmins(context, query.from_user, "lampu", "on", result)
+        await _control_device_callback(
+            query, context, "lampu", "on", "💡 Menyalakan lampu...", tuya.turn_on
+        )
     elif action == "off":
-        result = await _run_tuya(tuya.turn_off, "lampu")
-        await query.message.reply_text(result["message"])
-        await _notify_superadmins(context, query.from_user, "lampu", "off", result)
+        await _control_device_callback(
+            query, context, "lampu", "off", "🌑 Mematikan lampu...", tuya.turn_off
+        )
     elif action == "status":
         result = await _run_tuya(tuya.get_status, "lampu")
         if result["success"]:
