@@ -64,7 +64,7 @@ class TuyaDeviceController:
         return self._set_device_state(device_name, False)
 
     def _set_device_state(self, device_name: str, state: bool) -> dict:
-        """Set status perangkat (on/off) — langsung set_dps tanpa cek status dulu."""
+        """Set status perangkat (on/off) dengan cek status dulu agar tidak redundan."""
         if device_name not in self.devices:
             return {
                 "success": False,
@@ -81,7 +81,24 @@ class TuyaDeviceController:
                 "message": f"Perangkat '{device_name}' gagal diinisialisasi."
             }
 
-        # ── Set state langsung (1 round-trip ke perangkat) ──
+        # ── Cek status saat ini — hindari "dimatikan" padahal sudah mati ──
+        try:
+            raw = device.status()
+            dps = self._extract_dps(raw)
+            current = dps.get(str(dps_switch)) if isinstance(dps, dict) else None
+
+            if current is not None and bool(current) == state:
+                label = "menyala" if state else "mati"
+                icon = "💧" if device_name == "air" else "💡"
+                return {
+                    "success": True,
+                    "message": f"{icon} {device_name.upper()} sudah {label}",
+                    "no_op": True
+                }
+        except Exception:
+            pass
+
+        # ── Set state ──
         last_error = None
         for attempt in range(1, RETRIES + 1):
             try:
