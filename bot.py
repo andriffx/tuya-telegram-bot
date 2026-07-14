@@ -3,16 +3,19 @@ Telegram Bot — Tuya Smart Home (BARDI) dengan Role-Based Access Control.
 UI: ReplyKeyboardMarkup + InlineKeyboardMarkup (command / tetap tersedia sebagai fallback)
 """
 
+import asyncio
 import logging
 import os
 import sys
 from datetime import datetime
+from functools import partial
 from telegram import (
     Update,
     ReplyKeyboardMarkup,
     InlineKeyboardMarkup,
     InlineKeyboardButton,
 )
+from telegram.request import HTTPXRequest
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -44,6 +47,26 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 tuya = TuyaDeviceController()
+
+# Thread pool untuk operasi Tuya (blocking I/O) — jangan block event loop asyncio
+_tuya_executor = None
+
+
+def _get_tuya_executor():
+    global _tuya_executor
+    if _tuya_executor is None:
+        from concurrent.futures import ThreadPoolExecutor
+        _tuya_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="tuya")
+    return _tuya_executor
+
+
+async def _run_tuya(fn, *args, **kwargs):
+    """Jalankan operasi Tuya di thread terpisah agar polling Telegram tetap responsif."""
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(
+        _get_tuya_executor(),
+        partial(fn, *args, **kwargs),
+    )
 
 # ═══════════════════════════════════════════════════════
 #  KEYBOARD BUILDERS
@@ -321,7 +344,7 @@ async def whoami_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 @user_only
 async def air_on(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("💧 Menyalakan air...")
-    result = tuya.turn_on("air")
+    result = await _run_tuya(tuya.turn_on, "air")
     await _send_control_result(update, result, "air")
     await _notify_superadmins(context, update.effective_user, "air", "on", result)
 
@@ -330,7 +353,7 @@ async def air_on(update: Update, context: ContextTypes.DEFAULT_TYPE):
 @admin_only
 async def air_off(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🔌 Mematikan air...")
-    result = tuya.turn_off("air")
+    result = await _run_tuya(tuya.turn_off, "air")
     await _send_control_result(update, result, "air")
     await _notify_superadmins(context, update.effective_user, "air", "off", result)
 
@@ -339,7 +362,7 @@ async def air_off(update: Update, context: ContextTypes.DEFAULT_TYPE):
 @admin_only
 async def lampu_on(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("💡 Menyalakan lampu...")
-    result = tuya.turn_on("lampu")
+    result = await _run_tuya(tuya.turn_on, "lampu")
     await _send_control_result(update, result, "lampu")
     await _notify_superadmins(context, update.effective_user, "lampu", "on", result)
 
@@ -348,7 +371,7 @@ async def lampu_on(update: Update, context: ContextTypes.DEFAULT_TYPE):
 @admin_only
 async def lampu_off(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🌑 Mematikan lampu...")
-    result = tuya.turn_off("lampu")
+    result = await _run_tuya(tuya.turn_off, "lampu")
     await _send_control_result(update, result, "lampu")
     await _notify_superadmins(context, update.effective_user, "lampu", "off", result)
 
@@ -359,7 +382,7 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("📊 Mengecek status perangkat...")
     lines = ["📊 *Status Perangkat*\n"]
     for name, label, emoji in [("lampu", "Lampu", "💡"), ("air", "Air", "💧")]:
-        result = tuya.get_status(name)
+        result = await _run_tuya(tuya.get_status, name)
         if result["success"]:
             dps = result.get("status", {})
             if isinstance(dps, dict):
@@ -574,7 +597,11 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
+    # Jawab segera agar tombol tidak loading — hanya boleh answer() sekali per callback
+    try:
+        await query.answer()
+    except Exception as e:
+        logger.warning("Gagal answer callback %s: %s", query.data, e)
 
     data = query.data
     uid = update.effective_user.id
@@ -612,15 +639,15 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ── Callback: Air ──
 async def _callback_air(query, context, action: str, role: int):
     if action == "on" and role >= USER:
-        result = tuya.turn_on("air")
+        result = await _run_tuya(tuya.turn_on, "air")
         await query.message.reply_text(result["message"])
         await _notify_superadmins(context, query.from_user, "air", "on", result)
     elif action == "off" and role >= ADMIN:
-        result = tuya.turn_off("air")
+        result = await _run_tuya(tuya.turn_off, "air")
         await query.message.reply_text(result["message"])
         await _notify_superadmins(context, query.from_user, "air", "off", result)
     elif action == "status":
-        result = tuya.get_power_info("air")
+        result = await _run_tuya(tuya.get_power_info, "air")
         if result["success"]:
             dps = result.get("raw", {})
             switch_val = dps.get("1") if isinstance(dps, dict) else None
@@ -636,24 +663,24 @@ async def _callback_air(query, context, action: str, role: int):
         else:
             await query.message.reply_text("❌ Gagal membaca status air.")
     else:
-        await query.answer("⛔ Akses ditolak.", show_alert=True)
+        await query.message.reply_text("⛔ Akses ditolak.")
 
 
 # ── Callback: Lampu ──
 async def _callback_lampu(query, context, action: str, role: int):
     if role < ADMIN:
-        await query.answer("⛔ Admin only.", show_alert=True)
+        await query.message.reply_text("⛔ Admin only.")
         return
     if action == "on":
-        result = tuya.turn_on("lampu")
+        result = await _run_tuya(tuya.turn_on, "lampu")
         await query.message.reply_text(result["message"])
         await _notify_superadmins(context, query.from_user, "lampu", "on", result)
     elif action == "off":
-        result = tuya.turn_off("lampu")
+        result = await _run_tuya(tuya.turn_off, "lampu")
         await query.message.reply_text(result["message"])
         await _notify_superadmins(context, query.from_user, "lampu", "off", result)
     elif action == "status":
-        result = tuya.get_status("lampu")
+        result = await _run_tuya(tuya.get_status, "lampu")
         if result["success"]:
             dps = result.get("status", {})
             switch_val = dps.get("20") if isinstance(dps, dict) else None
@@ -668,7 +695,7 @@ async def _callback_mon(query, context, action: str):
     if action == "status":
         lines = ["📊 *Status Perangkat*\n"]
         for name, label, emoji in [("lampu", "Lampu", "💡"), ("air", "Air", "💧")]:
-            result = tuya.get_status(name)
+            result = await _run_tuya(tuya.get_status, name)
             if result["success"]:
                 dps = result.get("status", {})
                 if isinstance(dps, dict):
@@ -694,7 +721,7 @@ async def _callback_mon(query, context, action: str):
 # ── Callback: Users ──
 async def _callback_users(query, context, action: str, role: int):
     if role < SUPERADMIN:
-        await query.answer("⛔ Superadmin only.", show_alert=True)
+        await query.message.reply_text("⛔ Superadmin only.")
         return
 
     if action == "list":
@@ -751,7 +778,7 @@ async def _callback_users(query, context, action: str, role: int):
 
 async def _callback_role_confirm(query, context, target_id: int, role_input: int):
     if role_input not in (USER, ADMIN):
-        await query.answer("Role tidak valid.", show_alert=True)
+        await query.message.reply_text("❌ Role tidak valid.")
         return
     if auth.set_role(target_id, role_input):
         rname = ROLE_NAMES[role_input]
@@ -857,9 +884,20 @@ async def unknown_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ═══════════════════════════════════════════════════════
 
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logger.error("Update %s caused error %s", update, context.error)
-    if update and update.message:
-        await update.message.reply_text("⚠️ Terjadi kesalahan. Coba lagi nanti.")
+    error = context.error
+    logger.error("Update %s caused error %s", update, error)
+
+    if not update:
+        return
+
+    msg = "⚠️ Terjadi kesalahan. Coba lagi nanti."
+    try:
+        if update.callback_query:
+            await update.callback_query.message.reply_text(msg)
+        elif update.message:
+            await update.message.reply_text(msg)
+    except Exception as e:
+        logger.warning("Gagal kirim pesan error ke user: %s", e)
 
 
 # ═══════════════════════════════════════════════════════
@@ -877,7 +915,20 @@ def main():
         return
 
     logger.info("Memulai bot Telegram...")
-    application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+
+    request = HTTPXRequest(
+        connect_timeout=30.0,
+        read_timeout=30.0,
+        write_timeout=30.0,
+        pool_timeout=30.0,
+    )
+    application = (
+        Application.builder()
+        .token(TELEGRAM_BOT_TOKEN)
+        .request(request)
+        .get_updates_request(request)
+        .build()
+    )
 
     # ── Commands ──
     application.add_handler(CommandHandler("start", start_command))

@@ -76,18 +76,20 @@ class AuthManager:
                 for uid, role in data.get("users", {}).items():
                     self._db[int(uid)] = int(role)
                 logger.info("Loaded %d user(s) from %s", len(self._db), USERS_FILE)
+                return
             except Exception as e:
-                logger.warning("Gagal muat %s: %s", USERS_FILE, e)
-        else:
-            # Inisialisasi file kosong dengan struktur valid
-            try:
-                USERS_FILE.write_text(
-                    json.dumps({"users": {}}, indent=2),
-                    encoding="utf-8"
-                )
-                logger.info("Created empty %s", USERS_FILE)
-            except Exception as e:
-                logger.warning("Gagal buat %s: %s", USERS_FILE, e)
+                logger.warning("Gagal muat %s: %s — reset ke kosong", USERS_FILE, e)
+                self._db.clear()
+
+        # File tidak ada, kosong, atau corrupt — inisialisasi struktur valid
+        try:
+            USERS_FILE.write_text(
+                json.dumps({"users": {}}, indent=2),
+                encoding="utf-8"
+            )
+            logger.info("Created empty %s", USERS_FILE)
+        except Exception as e:
+            logger.warning("Gagal buat %s: %s", USERS_FILE, e)
 
     def _save(self):
         try:
@@ -97,10 +99,10 @@ class AuthManager:
                 for uid, role in self._db.items()
                 if _env_role(uid) == PUBLIC  # hanya runtime overrides
             }
-            USERS_FILE.write_text(
-                json.dumps({"users": runtime}, indent=2),
-                encoding="utf-8"
-            )
+            payload = json.dumps({"users": runtime}, indent=2)
+            tmp = USERS_FILE.with_suffix(".tmp")
+            tmp.write_text(payload, encoding="utf-8")
+            tmp.replace(USERS_FILE)
         except Exception as e:
             logger.error("Gagal simpan %s: %s", USERS_FILE, e)
 
