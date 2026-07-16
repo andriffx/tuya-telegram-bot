@@ -2,6 +2,7 @@
 Controller untuk perangkat Tuya menggunakan tinytuya.
 """
 
+import threading
 import time
 import tinytuya
 import logging
@@ -12,6 +13,7 @@ logger = logging.getLogger(__name__)
 # Retry config
 RETRIES = 3
 RETRY_DELAY = 1.5  # detik
+VERIFY_DELAY = 0.3  # jeda singkat setelah set_status agar perangkat sempat apply
 
 
 class TuyaDeviceController:
@@ -19,6 +21,8 @@ class TuyaDeviceController:
 
     def __init__(self):
         self.devices = {}
+        # Semua I/O Tuya diserialkan — hindari race saat air+lampu diklik bersamaan
+        self._io_lock = threading.Lock()
         self._initialize_devices()
 
     def _initialize_devices(self):
@@ -31,24 +35,23 @@ class TuyaDeviceController:
                     local_key=info["local_key"],
                     version=info.get("version", 3.3)
                 )
-                # Jika IP kosong, coba set address ke auto
                 if not info.get("ip"):
                     device.set_address("Auto")
 
-                # Timeout lebih pendek — kontrol on/off butuh respons cepat
                 device.set_socketTimeout(4)
                 device.set_socketRetryLimit(2)
                 device.set_socketRetryDelay(0.5)
-                device.set_socketPersistent(True)
-                
+                # Jangan pakai persistent — bisa return status cache/stale
+                device.set_socketPersistent(False)
+
                 self.devices[name] = {
                     "device": device,
                     "info": info,
                     "status": "initialized"
                 }
-                logger.info(f"Perangkat '{name}' diinisialisasi (ID: {info['id']})")
+                logger.info("Perangkat '%s' diinisialisasi (ID: %s)", name, info["id"])
             except Exception as e:
-                logger.error(f"Gagal inisialisasi perangkat '{name}': {e}")
+                logger.error("Gagal inisialisasi perangkat '%s': %s", name, e)
                 self.devices[name] = {
                     "device": None,
                     "info": info,
@@ -63,8 +66,64 @@ class TuyaDeviceController:
         """Matikan perangkat."""
         return self._set_device_state(device_name, False)
 
+    def _extract_dps(self, raw_status) -> dict:
+        """Ekstrak DPS dari respon device.status()."""
+        if isinstance(raw_status, dict):
+            if "dps" in raw_status:
+                return raw_status["dps"]
+            return raw_status
+        return {}
+
+    def _is_valid_response(self, raw) -> bool:
+        if not isinstance(raw, dict):
+            return False
+        if raw.get("Err"):
+            return False
+        dps = self._extract_dps(raw)
+        return isinstance(dps, dict) and len(dps) > 0
+
+    def _get_switch_state(self, device_name: str):
+        """
+        Baca status switch perangkat.
+        Return True/False jika berhasil, None jika tidak bisa dibaca.
+        """
+        device_data = self.devices[device_name]
+        device = device_data["device"]
+        dps_switch = str(device_data["info"].get("dps_switch", 1))
+
+        raw = device.status()
+        if not self._is_valid_response(raw):
+            logger.warning("[%s] Respon status tidak valid: %r", device_name, raw)
+            return None
+
+        dps = self._extract_dps(raw)
+        if dps_switch not in dps:
+            logger.warning(
+                "[%s] DPS %s tidak ada di response: %r",
+                device_name, dps_switch, dps
+            )
+            return None
+
+        value = dps[dps_switch]
+        logger.info("[%s] DPS %s=%r", device_name, dps_switch, value)
+        return bool(value)
+
+    def _apply_switch(self, device_name: str, state: bool):
+        """Kirim perintah on/off dan tunggu respons (bukan fire-and-forget)."""
+        device_data = self.devices[device_name]
+        device = device_data["device"]
+        dps_switch = device_data["info"].get("dps_switch", 1)
+
+        if not device_data["info"].get("ip"):
+            device.set_address("Auto")
+
+        result = device.set_status(state, switch=dps_switch)
+        if isinstance(result, dict) and result.get("Err"):
+            raise RuntimeError(f"Tuya Err: {result['Err']}")
+        return result
+
     def _set_device_state(self, device_name: str, state: bool) -> dict:
-        """Set status perangkat (on/off) dengan cek status dulu agar tidak redundan."""
+        """Set status perangkat dengan lock, cek status valid, dan verifikasi setelah set."""
         if device_name not in self.devices:
             return {
                 "success": False,
@@ -72,79 +131,72 @@ class TuyaDeviceController:
             }
 
         device_data = self.devices[device_name]
-        device = device_data["device"]
-        dps_switch = device_data["info"].get("dps_switch", 1)
-
-        if device is None:
+        if device_data["device"] is None:
             return {
                 "success": False,
                 "message": f"Perangkat '{device_name}' gagal diinisialisasi."
             }
 
-        # ── Cek status saat ini — hindari "dimatikan" padahal sudah mati ──
-        try:
-            raw = device.status()
-            dps = self._extract_dps(raw)
-            current = dps.get(str(dps_switch)) if isinstance(dps, dict) else None
+        dps_switch = device_data["info"].get("dps_switch", 1)
+        icon = "💧" if device_name == "air" else "💡"
 
-            if current is not None and bool(current) == state:
+        with self._io_lock:
+            # ── Cek status — hanya no-op jika DPS switch terbaca dengan valid ──
+            current = self._get_switch_state(device_name)
+            if current is not None and current == state:
                 label = "menyala" if state else "mati"
-                icon = "💧" if device_name == "air" else "💡"
                 return {
                     "success": True,
                     "message": f"{icon} {device_name.upper()} sudah {label}",
                     "no_op": True
                 }
-        except Exception:
-            pass
 
-        # ── Set state ──
-        last_error = None
-        for attempt in range(1, RETRIES + 1):
-            try:
-                if not device_data["info"].get("ip"):
-                    device.set_address("Auto")
-
-                dps_payload = {str(dps_switch): state}
-
+            # ── Set state + verifikasi ulang ──
+            last_error = None
+            for attempt in range(1, RETRIES + 1):
                 try:
-                    result = device.set_dps(dps_payload)
-                except AttributeError:
-                    payload = device.generate_payload(tinytuya.CONTROL, dps_payload)
-                    result = device.send(payload)
+                    self._apply_switch(device_name, state)
+                    time.sleep(VERIFY_DELAY)
+                    verified = self._get_switch_state(device_name)
 
-                status_text = "dinyalakan" if state else "dimatikan"
-                logger.info("[%s] DPS %s=%s (attempt %d/%d)", device_name, dps_switch, state, attempt, RETRIES)
-                return {
-                    "success": True,
-                    "message": f"✅ {device_name.upper()} berhasil {status_text}",
-                    "raw": result
-                }
+                    if verified is not None and verified == state:
+                        status_text = "dinyalakan" if state else "dimatikan"
+                        logger.info(
+                            "[%s] DPS %s=%s verified (attempt %d/%d)",
+                            device_name, dps_switch, state, attempt, RETRIES
+                        )
+                        return {
+                            "success": True,
+                            "message": f"✅ {device_name.upper()} berhasil {status_text}",
+                        }
 
-            except Exception as e:
-                last_error = e
-                logger.warning("[%s] Attempt %d/%d gagal: %s", device_name, attempt, RETRIES, e)
+                    last_error = (
+                        f"verifikasi gagal: harapnya {state}, "
+                        f"dibaca {verified}"
+                    )
+                    logger.warning(
+                        "[%s] Attempt %d/%d: %s",
+                        device_name, attempt, RETRIES, last_error
+                    )
+
+                except Exception as e:
+                    last_error = e
+                    logger.warning(
+                        "[%s] Attempt %d/%d gagal: %s",
+                        device_name, attempt, RETRIES, e
+                    )
+
                 if attempt < RETRIES:
                     time.sleep(RETRY_DELAY)
 
         logger.error("[%s] Semua retry gagal: %s", device_name, last_error)
         return {
             "success": False,
-            "message": f"❌ Gagal mengontrol {device_name}: {str(last_error)}"
+            "message": f"❌ Gagal mengontrol {device_name}: {last_error}"
         }
 
-    def _extract_dps(self, raw_status) -> dict:
-        """Ekstrak DPS dari respon device.status() — handle berbagai format."""
-        if isinstance(raw_status, dict):
-            # tinytuya sering return {"dps": {...}, "t": ...}
-            if "dps" in raw_status:
-                return raw_status["dps"]
-            # Kadang return langsung DPS dict
-            return raw_status
-        return {}
-
     def _device_call(self, device_name: str, call_fn, extract_fn=None):
-        """Helper: panggil device method dengan retry."""
+        """Helper: panggil device method dengan retry (terkunci)."""
         if device_name not in self.devices:
             return {"success": False, "message": f"Perangkat '{device_name}' tidak ditemukan."}
 
@@ -153,16 +205,19 @@ class TuyaDeviceController:
         if device is None:
             return {"success": False, "message": f"Perangkat '{device_name}' belum diinisialisasi."}
 
-        last_error = None
-        for attempt in range(1, RETRIES + 1):
-            try:
-                raw = call_fn(device)
-                return extract_fn(raw) if extract_fn else {"success": True, "result": raw}
-            except Exception as e:
-                last_error = e
-                logger.warning("[%s] Attempt %d/%d: %s", device_name, attempt, RETRIES, e)
-                if attempt < RETRIES:
-                    time.sleep(RETRY_DELAY)
+        with self._io_lock:
+            last_error = None
+            for attempt in range(1, RETRIES + 1):
+                try:
+                    raw = call_fn(device)
+                    if extract_fn:
+                        return extract_fn(raw)
+                    return {"success": True, "result": raw}
+                except Exception as e:
+                    last_error = e
+                    logger.warning("[%s] Attempt %d/%d: %s", device_name, attempt, RETRIES, e)
+                    if attempt < RETRIES:
+                        time.sleep(RETRY_DELAY)
 
         return {"success": False, "message": str(last_error)}
 
