@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Smart Home Dashboard</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --card: #1a2332;
+      --border: #2d3a4f;
+      --text: #e7ecf3;
+      --muted: #8b9cb3;
+      --green: #22c55e;
+      --red: #ef4444;
+      --blue: #3b82f6;
+      --yellow: #eab308;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 1.5rem;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1.5rem;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+    h1 { font-size: 1.5rem; font-weight: 600; }
+    .subtitle { color: var(--muted); font-size: 0.875rem; margin-top: 0.25rem; }
+    .auth-bar {
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+    }
+    input {
+      background: var(--card);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 0.5rem 0.75rem;
+      border-radius: 8px;
+      font-size: 0.875rem;
+      min-width: 200px;
+    }
+    button {
+      border: none;
+      border-radius: 8px;
+      padding: 0.5rem 1rem;
+      font-size: 0.875rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    button:hover { opacity: 0.85; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-save { background: var(--blue); color: white; }
+    .btn-refresh { background: var(--border); color: var(--text); }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 1rem;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.25rem;
+    }
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1rem;
+    }
+    .card-title { font-size: 1.125rem; font-weight: 600; }
+    .badge {
+      font-size: 0.75rem;
+      padding: 0.25rem 0.625rem;
+      border-radius: 999px;
+      font-weight: 500;
+    }
+    .badge-on { background: rgba(34,197,94,0.15); color: var(--green); }
+    .badge-off { background: rgba(239,68,68,0.15); color: var(--red); }
+    .badge-unknown { background: rgba(139,156,179,0.15); color: var(--muted); }
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 0.75rem;
+      margin: 1rem 0;
+    }
+    .stat {
+      background: var(--bg);
+      border-radius: 8px;
+      padding: 0.75rem;
+      text-align: center;
+    }
+    .stat-value { font-size: 1.25rem; font-weight: 600; }
+    .stat-label { font-size: 0.75rem; color: var(--muted); margin-top: 0.25rem; }
+    .actions { display: flex; gap: 0.5rem; margin-top: 1rem; }
+    .btn-on { background: var(--green); color: white; flex: 1; }
+    .btn-off { background: var(--red); color: white; flex: 1; }
+    .toast {
+      position: fixed;
+      bottom: 1.5rem;
+      right: 1.5rem;
+      background: var(--card);
+      border: 1px solid var(--border);
+      padding: 0.75rem 1rem;
+      border-radius: 8px;
+      font-size: 0.875rem;
+      max-width: 360px;
+      opacity: 0;
+      visibility: hidden;
+      transform: translateY(0.75rem);
+      transition: opacity 0.3s ease, transform 0.3s ease, visibility 0.3s;
+      z-index: 100;
+      cursor: pointer;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+    }
+    .toast.show {
+      opacity: 1;
+      visibility: visible;
+      transform: translateY(0);
+    }
+    .toast.error { border-color: var(--red); }
+    .footer {
+      margin-top: 2rem;
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.75rem;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>🏠 Smart Home Dashboard</h1>
+      <p class="subtitle">Kontrol lokal via REST API — satu backend dengan bot Telegram</p>
+    </div>
+    <div class="auth-bar">
+      <input type="password" id="apiKey" placeholder="API Key (DASHBOARD_API_KEY)">
+      <button class="btn-save" onclick="saveKey()">Simpan</button>
+      <button class="btn-refresh" onclick="refreshAll()">↻ Refresh</button>
+    </div>
+  </header>
+
+  <div class="grid">
+    <div class="card" id="card-air">
+      <div class="card-header">
+        <span class="card-title">💧 Air</span>
+        <span class="badge badge-unknown" id="air-badge">—</span>
+      </div>
+      <div class="stats">
+        <div class="stat"><div class="stat-value" id="air-power">—</div><div class="stat-label">Watt</div></div>
+        <div class="stat"><div class="stat-value" id="air-current">—</div><div class="stat-label">Ampere</div></div>
+        <div class="stat"><div class="stat-value" id="air-voltage">—</div><div class="stat-label">Volt</div></div>
+      </div>
+      <div class="actions">
+        <button class="btn-on" onclick="control('air','on')">Nyalakan</button>
+        <button class="btn-off" onclick="control('air','off')">Matikan</button>
+      </div>
+    </div>
+
+    <div class="card" id="card-lampu">
+      <div class="card-header">
+        <span class="card-title">💡 Lampu</span>
+        <span class="badge badge-unknown" id="lampu-badge">—</span>
+      </div>
+      <p style="color:var(--muted);font-size:0.875rem;margin:1rem 0;">Smart bulb BARDI RGBWW</p>
+      <div class="actions">
+        <button class="btn-on" onclick="control('lampu','on')">Nyalakan</button>
+        <button class="btn-off" onclick="control('lampu','off')">Matikan</button>
+      </div>
+    </div>
+  </div>
+
+  <p class="footer">Auto-refresh setiap 30 detik · Port default 8080</p>
+  <div class="toast" id="toast" title="Klik untuk tutup"></div>
+
+  <script>
+    const KEY_STORAGE = 'tuyabot_api_key';
+
+    function getKey() {
+      return document.getElementById('apiKey').value || localStorage.getItem(KEY_STORAGE) || '';
+    }
+
+    function saveKey() {
+      const key = document.getElementById('apiKey').value.trim();
+      if (key) localStorage.setItem(KEY_STORAGE, key);
+      toast('API key disimpan');
+      refreshAll();
+    }
+
+    async function api(path, method = 'GET') {
+      const res = await fetch(path, {
+        method,
+        headers: { 'X-API-Key': getKey() },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || res.statusText);
+      return data;
+    }
+
+    function setBadge(id, on, online = true) {
+      const el = document.getElementById(id);
+      if (!online) {
+        el.textContent = 'Offline';
+        el.className = 'badge badge-unknown';
+        return;
+      }
+      el.textContent = on ? 'NYALA' : 'MATI';
+      el.className = 'badge ' + (on ? 'badge-on' : 'badge-off');
+    }
+
+    async function refreshAir() {
+      try {
+        const status = await api('/api/devices/air/status');
+        setBadge('air-badge', status.switch_on, status.online);
+        const power = await api('/api/devices/air/power');
+        if (power.success) {
+          document.getElementById('air-power').textContent = power.power_w;
+          document.getElementById('air-current').textContent = power.current_a;
+          document.getElementById('air-voltage').textContent = power.voltage_v;
+        }
+      } catch (e) {
+        setBadge('air-badge', false, false);
+        console.error(e);
+      }
+    }
+
+    async function refreshLampu() {
+      try {
+        const status = await api('/api/devices/lampu/status');
+        setBadge('lampu-badge', status.switch_on, status.online);
+      } catch (e) {
+        setBadge('lampu-badge', false, false);
+        console.error(e);
+      }
+    }
+
+    async function refreshAll(options = {}) {
+      const quiet = options.quiet ?? false;
+      if (!getKey()) {
+        if (!quiet) toast('Masukkan API key dulu', true);
+        return;
+      }
+      await Promise.all([refreshAir(), refreshLampu()]);
+    }
+
+    async function control(name, action) {
+      if (!getKey()) {
+        toast('Masukkan API key dulu', true);
+        return;
+      }
+      const btns = document.querySelectorAll(`#card-${name} button`);
+      btns.forEach(b => b.disabled = true);
+      try {
+        const data = await api(`/api/devices/${name}/${action}`, 'POST');
+        toast(data.message);
+        await refreshAll();
+      } catch (e) {
+        toast(e.message, true);
+      } finally {
+        btns.forEach(b => b.disabled = false);
+      }
+    }
+
+    let toastHideTimer = null;
+    let toastCleanupTimer = null;
+
+    function hideToast() {
+      const el = document.getElementById('toast');
+      el.classList.remove('show');
+      clearTimeout(toastHideTimer);
+      clearTimeout(toastCleanupTimer);
+      toastCleanupTimer = setTimeout(() => {
+        el.classList.remove('error');
+        el.textContent = '';
+      }, 320);
+    }
+
+    function toast(msg, isError = false) {
+      const el = document.getElementById('toast');
+      clearTimeout(toastHideTimer);
+      clearTimeout(toastCleanupTimer);
+
+      el.textContent = msg;
+      el.classList.toggle('error', isError);
+
+      // Reset animasi supaya toast baru selalu muncul/hilang dengan benar
+      el.classList.remove('show');
+      requestAnimationFrame(() => {
+        el.classList.add('show');
+      });
+
+      toastHideTimer = setTimeout(hideToast, 3000);
+    }
+
+    document.getElementById('toast').addEventListener('click', hideToast);
+
+    document.getElementById('apiKey').value = localStorage.getItem(KEY_STORAGE) || '';
+    refreshAll({ quiet: true });
+    setInterval(() => refreshAll({ quiet: true }), 30000);
+  </script>
+</body>
+</html>

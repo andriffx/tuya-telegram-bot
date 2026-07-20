@@ -25,4 +25,4 @@ COPY . .
 
 # Run as root inside container so bind-mounted volumes are writable
 # (Host file ownership is the actual security boundary in single-node Docker)
-CMD ["python", "bot.py"]
+CMD ["python", "run.py"]

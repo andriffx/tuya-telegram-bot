@@ -8,7 +8,6 @@ import logging
 import os
 import sys
 from datetime import datetime
-from functools import partial
 from telegram import (
     Update,
     ReplyKeyboardMarkup,
@@ -26,7 +25,7 @@ from telegram.ext import (
 )
 
 from config import TELEGRAM_BOT_TOKEN
-from tuya_controller import TuyaDeviceController
+from device_service import run_tuya, tuya
 from auth_manager import auth, ROLE_NAMES, PUBLIC, USER, ADMIN, SUPERADMIN
 from rate_limiter import rate_limit
 
@@ -45,28 +44,6 @@ logging.basicConfig(
 )
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
-
-tuya = TuyaDeviceController()
-
-# Thread pool untuk operasi Tuya (blocking I/O) — jangan block event loop asyncio
-_tuya_executor = None
-
-
-def _get_tuya_executor():
-    global _tuya_executor
-    if _tuya_executor is None:
-        from concurrent.futures import ThreadPoolExecutor
-        _tuya_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="tuya")
-    return _tuya_executor
-
-
-async def _run_tuya(fn, *args, **kwargs):
-    """Jalankan operasi Tuya di thread terpisah agar polling Telegram tetap responsif."""
-    loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(
-        _get_tuya_executor(),
-        partial(fn, *args, **kwargs),
-    )
 
 # ═══════════════════════════════════════════════════════
 #  KEYBOARD BUILDERS
@@ -283,7 +260,7 @@ async def _control_device_callback(
 ):
     """Kontrol via inline button: kirim pending → Tuya → edit pesan jadi hasil."""
     status_msg = await query.message.reply_text(pending_msg)
-    result = await _run_tuya(method, device_name)
+    result = await run_tuya(method, device_name)
     await _finalize_control_message(status_msg, result, device_name, query.message)
     asyncio.create_task(
         _notify_superadmins(context, query.from_user, device_name, action, result)
@@ -300,7 +277,7 @@ async def _control_device_command(
 ):
     """Kontrol via command: kirim pending → Tuya → edit pesan jadi hasil."""
     status_msg = await update.message.reply_text(pending_msg)
-    result = await _run_tuya(method, device_name)
+    result = await run_tuya(method, device_name)
     await _finalize_control_message(status_msg, result, device_name, update.message)
     asyncio.create_task(
         _notify_superadmins(context, update.effective_user, device_name, action, result)
@@ -422,7 +399,7 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("📊 Mengecek status perangkat...")
     lines = ["📊 *Status Perangkat*\n"]
     for name, label, emoji in [("lampu", "Lampu", "💡"), ("air", "Air", "💧")]:
-        result = await _run_tuya(tuya.get_status, name)
+        result = await run_tuya(tuya.get_status, name)
         if result["success"]:
             dps = result.get("status", {})
             if isinstance(dps, dict):
@@ -687,7 +664,7 @@ async def _callback_air(query, context, action: str, role: int):
             query, context, "air", "off", "🔌 Mematikan air...", tuya.turn_off
         )
     elif action == "status":
-        result = await _run_tuya(tuya.get_power_info, "air")
+        result = await run_tuya(tuya.get_power_info, "air")
         if result["success"]:
             dps = result.get("raw", {})
             switch_val = dps.get("1") if isinstance(dps, dict) else None
@@ -720,7 +697,7 @@ async def _callback_lampu(query, context, action: str, role: int):
             query, context, "lampu", "off", "🌑 Mematikan lampu...", tuya.turn_off
         )
     elif action == "status":
-        result = await _run_tuya(tuya.get_status, "lampu")
+        result = await run_tuya(tuya.get_status, "lampu")
         if result["success"]:
             dps = result.get("status", {})
             switch_val = dps.get("20") if isinstance(dps, dict) else None
@@ -735,7 +712,7 @@ async def _callback_mon(query, context, action: str):
     if action == "status":
         lines = ["📊 *Status Perangkat*\n"]
         for name, label, emoji in [("lampu", "Lampu", "💡"), ("air", "Air", "💧")]:
-            result = await _run_tuya(tuya.get_status, name)
+            result = await run_tuya(tuya.get_status, name)
             if result["success"]:
                 dps = result.get("status", {})
                 if isinstance(dps, dict):
@@ -944,17 +921,14 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 #  MAIN
 # ═══════════════════════════════════════════════════════
 
-def main():
+def build_application():
+    """Bangun dan konfigurasi Telegram Application."""
     from config import validate_config
 
     if not validate_config():
-        logger.error("❌ Konfigurasi tidak lengkap.")
-        return
+        raise RuntimeError("Konfigurasi tidak lengkap.")
     if not TELEGRAM_BOT_TOKEN:
-        logger.error("TELEGRAM_BOT_TOKEN belum di-set!")
-        return
-
-    logger.info("Memulai bot Telegram...")
+        raise RuntimeError("TELEGRAM_BOT_TOKEN belum di-set!")
 
     request = HTTPXRequest(
         connect_timeout=30.0,
@@ -970,36 +944,29 @@ def main():
         .build()
     )
 
-    # ── Commands ──
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("whoami", whoami_command))
-
-    # Legacy device commands
     application.add_handler(CommandHandler("airon", air_on))
     application.add_handler(CommandHandler("airoff", air_off))
     application.add_handler(CommandHandler("lampuon", lampu_on))
     application.add_handler(CommandHandler("lampuoff", lampu_off))
-
-    # Legacy monitoring commands
     application.add_handler(CommandHandler("status", status_command))
     application.add_handler(CommandHandler("devices", devices_command))
-
-    # Legacy superadmin commands
     application.add_handler(CommandHandler("users", users_command))
     application.add_handler(CommandHandler("allowuser", allowuser_command))
     application.add_handler(CommandHandler("removeuser", removeuser_command))
-
-    # ── Callback Queries (inline buttons) ──
     application.add_handler(CallbackQueryHandler(callback_handler))
-
-    # ── Text menu (ReplyKeyboard) ──
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, menu_handler))
-
-    # ── Fallback ──
     application.add_handler(MessageHandler(filters.TEXT | filters.COMMAND, unknown_message))
-
     application.add_error_handler(error_handler)
+
+    return application
+
+
+def main():
+    logger.info("Memulai bot Telegram...")
+    application = build_application()
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
