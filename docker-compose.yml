@@ -16,6 +16,9 @@ services:
     # (remove if using Tuya Cloud API only)
     network_mode: host
 
+    # Dashboard API (host network → langsung di port host, bukan port mapping)
+    # Akses: http://<IP-server>:8080
+
     # Graceful shutdown
     stop_signal: SIGTERM
     stop_grace_period: 10s
