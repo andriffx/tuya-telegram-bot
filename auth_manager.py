@@ -180,6 +180,30 @@ class AuthManager:
             })
         return rows
 
+    def list_all_admins(self) -> list[dict]:
+        """Semua admin terdaftar (ENV + runtime), untuk referensi saat assign notif."""
+        seen: Set[int] = set()
+        rows = []
+
+        for uid in sorted(ENV_ADMIN):
+            seen.add(uid)
+            rows.append({
+                "id": uid,
+                "role_name": ROLE_NAMES[ADMIN],
+                "source": "env",
+                "is_recipient": uid in self._air_notify_recipients,
+            })
+
+        for uid, role in sorted(self._db.items()):
+            if role == ADMIN and uid not in seen:
+                rows.append({
+                    "id": uid,
+                    "role_name": ROLE_NAMES[ADMIN],
+                    "source": "runtime",
+                    "is_recipient": uid in self._air_notify_recipients,
+                })
+        return rows
+
     def add_air_notify_recipient(self, target_id: int) -> tuple[bool, str]:
         """
         Tambah admin ke daftar penerima notif air (aksi role User).

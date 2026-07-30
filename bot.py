@@ -826,9 +826,10 @@ async def _callback_users(query, context, action: str, role: int):
 def _format_notify_list() -> str:
     lines = [
         "🔔 *Notifikasi Air (Role User)*\n",
-        "_Admin di bawah akan dapat notif saat role **User** kontrol air._",
-        "_Superadmin selalu dapat **semua** notifikasi._\n",
-        "*📋 Penerima tambahan:*",
+        "_Saat role **User** kontrol air, notif dikirim ke:_",
+        "• Semua **Superadmin** (otomatis)",
+        "• Admin di daftar *Penerima aktif* di bawah\n",
+        "*📋 Penerima notif aktif:*",
     ]
     recipients = auth.list_air_notify_recipients()
     if recipients:
@@ -836,7 +837,22 @@ def _format_notify_list() -> str:
             icon = "💡" if row["role"] == ADMIN else "👑" if row["role"] == SUPERADMIN else "❓"
             lines.append(f"  • `{row['id']}` — {icon} {row['role_name']}")
     else:
-        lines.append("  _(belum ada — hanya superadmin yang dapat notif user/air)_")
+        lines.append("  _(belum ada)_")
+
+    lines.append("\n*💡 Admin terdaftar (ENV + runtime):*")
+    admins = auth.list_all_admins()
+    if admins:
+        for row in admins:
+            status = "✅ penerima" if row["is_recipient"] else "➕ belum ditambahkan"
+            src = "ENV" if row["source"] == "env" else "runtime"
+            lines.append(f"  • `{row['id']}` — 💡 Admin _({src}, {status})_")
+    else:
+        lines.append("  _(belum ada admin — set `ADMIN_USERS` di .env atau tambah via bot)_")
+
+    lines.append(
+        "\n_Untuk menambah admin ENV ke penerima: klik **➕ Tambah Admin** "
+        "lalu kirim Telegram ID-nya._"
+    )
     return "\n".join(lines)
 
 
