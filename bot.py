@@ -104,6 +104,17 @@ def _users_inline() -> InlineKeyboardMarkup:
             InlineKeyboardButton("➕ Tambah User", callback_data="users|add"),
             InlineKeyboardButton("➖ Hapus User", callback_data="users|remove"),
         ],
+        [InlineKeyboardButton("🔔 Notif Air (User)", callback_data="notify|menu")],
+    ])
+
+
+def _notify_inline() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("📋 Daftar Penerima", callback_data="notify|list")],
+        [
+            InlineKeyboardButton("➕ Tambah Admin", callback_data="notify|add"),
+            InlineKeyboardButton("➖ Hapus Admin", callback_data="notify|remove"),
+        ],
     ])
 
 
@@ -200,24 +211,32 @@ async def _finalize_control_message(message, result: dict, device_name: str, fal
             await fallback_chat.reply_text(text, parse_mode=parse_mode)
 
 
-async def _notify_superadmins(
+async def _notify_control_event(
     context: ContextTypes.DEFAULT_TYPE,
     user,
     device_name: str,
     action: str,
     result: dict
 ):
-    """Kirim notifikasi ke semua superadmin (skip jika superadmin yang kontrol)."""
-    superadmin_ids = auth.get_superadmin_ids()
-    if not superadmin_ids:
+    """
+    Kirim notifikasi kontrol perangkat.
+    - Superadmin: selalu dapat semua notif (kecuali aksi sendiri)
+    - Role User + air: tambahan ke admin yang di-assign di daftar notif
+    """
+    actor_role = auth.get_role(user.id)
+    if actor_role == SUPERADMIN:
         return
 
-    role = auth.get_role(user.id)
-    if role == SUPERADMIN:
+    recipients = set(auth.get_superadmin_ids())
+
+    if actor_role == USER and device_name == "air":
+        recipients.update(auth.get_air_notify_recipient_ids())
+
+    if not recipients:
         return
 
-    role_icon = {0: "🌐", 1: "💧", 2: "💡", 3: "👑"}.get(role, "🌐")
-    role_name = ROLE_NAMES.get(role, "Publik")
+    role_icon = {0: "🌐", 1: "💧", 2: "💡", 3: "👑"}.get(actor_role, "🌐")
+    role_name = ROLE_NAMES.get(actor_role, "Publik")
 
     device_icon = "💧" if device_name == "air" else "💡"
     action_label = "NYALA" if action == "on" else "MATI"
@@ -243,11 +262,11 @@ async def _notify_superadmins(
         f"📌 *Status* : {status}"
     )
 
-    for admin_id in superadmin_ids:
+    for chat_id in recipients:
         try:
-            await context.bot.send_message(chat_id=admin_id, text=text, parse_mode="Markdown")
+            await context.bot.send_message(chat_id=chat_id, text=text, parse_mode="Markdown")
         except Exception as e:
-            logger.warning("Gagal kirim notifikasi ke superadmin %s: %s", admin_id, e)
+            logger.warning("Gagal kirim notifikasi ke %s: %s", chat_id, e)
 
 
 async def _control_device_callback(
@@ -263,7 +282,7 @@ async def _control_device_callback(
     result = await run_tuya(method, device_name)
     await _finalize_control_message(status_msg, result, device_name, query.message)
     asyncio.create_task(
-        _notify_superadmins(context, query.from_user, device_name, action, result)
+        _notify_control_event(context, query.from_user, device_name, action, result)
     )
 
 
@@ -280,7 +299,7 @@ async def _control_device_command(
     result = await run_tuya(method, device_name)
     await _finalize_control_message(status_msg, result, device_name, update.message)
     asyncio.create_task(
-        _notify_superadmins(context, update.effective_user, device_name, action, result)
+        _notify_control_event(context, update.effective_user, device_name, action, result)
     )
 
 
@@ -324,7 +343,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• 🪪 Akun Saya — Lihat ID & role Anda",
     ]
     if role == SUPERADMIN:
-        lines.append("• 👑 Manajemen User — Kelola akses user")
+        lines.append("• 👑 Manajemen User — Kelola akses & notif air (User)")
 
     lines.extend([
         "\n*💡 Tips:*",
@@ -545,6 +564,15 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _flow_remove_user_id(update, context)
         return
 
+    # ── Interactive flow: notif air ──
+    if context.user_data.get("awaiting_add_notify_id"):
+        await _flow_add_notify_id(update, context)
+        return
+
+    if context.user_data.get("awaiting_remove_notify_id"):
+        await _flow_remove_notify_id(update, context)
+        return
+
     # ── 💧 Air ──
     if text == "💧 Air":
         if role < USER:
@@ -636,6 +664,8 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif data.startswith("role|"):
             _, target_id, role_input = data.split("|")
             await _callback_role_confirm(query, context, int(target_id), int(role_input))
+        elif data.startswith("notify|"):
+            await _callback_notify(query, context, data.split("|")[1], role)
         elif data == "back|main":
             try:
                 await query.edit_message_reply_markup(reply_markup=None)
@@ -793,6 +823,62 @@ async def _callback_users(query, context, action: str, role: int):
         context.user_data["awaiting_remove_user_id"] = True
 
 
+def _format_notify_list() -> str:
+    lines = [
+        "🔔 *Notifikasi Air (Role User)*\n",
+        "_Admin di bawah akan dapat notif saat role **User** kontrol air._",
+        "_Superadmin selalu dapat **semua** notifikasi._\n",
+        "*📋 Penerima tambahan:*",
+    ]
+    recipients = auth.list_air_notify_recipients()
+    if recipients:
+        for row in recipients:
+            icon = "💡" if row["role"] == ADMIN else "👑" if row["role"] == SUPERADMIN else "❓"
+            lines.append(f"  • `{row['id']}` — {icon} {row['role_name']}")
+    else:
+        lines.append("  _(belum ada — hanya superadmin yang dapat notif user/air)_")
+    return "\n".join(lines)
+
+
+async def _callback_notify(query, context, action: str, role: int):
+    if role < SUPERADMIN:
+        await query.message.reply_text("⛔ Superadmin only.")
+        return
+
+    if action == "menu":
+        await query.message.reply_text(
+            _format_notify_list(),
+            parse_mode="Markdown",
+            reply_markup=_notify_inline(),
+        )
+
+    elif action == "list":
+        await query.message.reply_text(
+            _format_notify_list(),
+            parse_mode="Markdown",
+            reply_markup=_notify_inline(),
+        )
+
+    elif action == "add":
+        await query.message.reply_text(
+            "➕ *Tambah Penerima Notif Air*\n\n"
+            "Kirim *Telegram ID* admin yang ingin menerima notif "
+            "saat role **User** kontrol air.\n\n"
+            "_Hanya role **Admin** yang bisa ditambahkan._\n"
+            "_Superadmin sudah otomatis dapat semua notif._",
+            parse_mode="Markdown",
+        )
+        context.user_data["awaiting_add_notify_id"] = True
+
+    elif action == "remove":
+        await query.message.reply_text(
+            "➖ *Hapus Penerima Notif Air*\n\n"
+            "Kirim *Telegram ID* admin yang ingin dihapus dari daftar.",
+            parse_mode="Markdown",
+        )
+        context.user_data["awaiting_remove_notify_id"] = True
+
+
 async def _callback_role_confirm(query, context, target_id: int, role_input: int):
     if role_input not in (USER, ADMIN):
         await query.message.reply_text("❌ Role tidak valid.")
@@ -869,6 +955,52 @@ async def _flow_remove_user_id(update: Update, context: ContextTypes.DEFAULT_TYP
             "❌ Gagal. User tidak ada atau berasal dari ENV.",
             reply_markup=_users_inline(),
         )
+
+
+async def _flow_add_notify_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text.strip()
+    context.user_data.pop("awaiting_add_notify_id", None)
+
+    try:
+        target_id = int(text)
+    except ValueError:
+        await update.message.reply_text(
+            "❌ ID harus berupa angka.",
+            reply_markup=_notify_inline(),
+        )
+        return
+
+    ok, message = auth.add_air_notify_recipient(target_id)
+    await update.message.reply_text(
+        f"{'✅' if ok else '❌'} {message}",
+        parse_mode="Markdown",
+        reply_markup=_notify_inline(),
+    )
+    if ok:
+        logger.info("Superadmin %s tambah notif air recipient %s", update.effective_user.id, target_id)
+
+
+async def _flow_remove_notify_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text.strip()
+    context.user_data.pop("awaiting_remove_notify_id", None)
+
+    try:
+        target_id = int(text)
+    except ValueError:
+        await update.message.reply_text(
+            "❌ ID harus berupa angka.",
+            reply_markup=_notify_inline(),
+        )
+        return
+
+    ok, message = auth.remove_air_notify_recipient(target_id)
+    await update.message.reply_text(
+        f"{'✅' if ok else '❌'} {message}",
+        parse_mode="Markdown",
+        reply_markup=_notify_inline(),
+    )
+    if ok:
+        logger.info("Superadmin %s hapus notif air recipient %s", update.effective_user.id, target_id)
 
 
 # ═══════════════════════════════════════════════════════

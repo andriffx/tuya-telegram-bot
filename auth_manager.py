@@ -67,44 +67,52 @@ class AuthManager:
     def __init__(self):
         # runtime store: {user_id: role_int}
         self._db: Dict[int, int] = {}
+        # admin yang dapat notif saat role User kontrol air
+        self._air_notify_recipients: Set[int] = set()
         self._load()
 
     def _load(self):
+        data = {"users": {}, "air_notify_recipients": []}
+
         if USERS_FILE.exists() and USERS_FILE.stat().st_size > 0:
             try:
                 data = json.loads(USERS_FILE.read_text(encoding="utf-8"))
                 for uid, role in data.get("users", {}).items():
                     self._db[int(uid)] = int(role)
-                logger.info("Loaded %d user(s) from %s", len(self._db), USERS_FILE)
+                self._air_notify_recipients = {
+                    int(uid) for uid in data.get("air_notify_recipients", [])
+                }
+                logger.info(
+                    "Loaded %d user(s), %d air notify recipient(s) from %s",
+                    len(self._db), len(self._air_notify_recipients), USERS_FILE,
+                )
                 return
             except Exception as e:
                 logger.warning("Gagal muat %s: %s — reset ke kosong", USERS_FILE, e)
                 self._db.clear()
+                self._air_notify_recipients.clear()
 
-        # File tidak ada, kosong, atau corrupt — inisialisasi struktur valid
-        try:
-            USERS_FILE.write_text(
-                json.dumps({"users": {}}, indent=2),
-                encoding="utf-8"
-            )
-            logger.info("Created empty %s", USERS_FILE)
-        except Exception as e:
-            logger.warning("Gagal buat %s: %s", USERS_FILE, e)
+        self._write_file({"users": {}, "air_notify_recipients": []})
+        logger.info("Created empty %s", USERS_FILE)
 
-    def _save(self):
+    def _write_file(self, payload: dict):
         try:
-            # Jangan simpan yang berasal dari ENV (ENV adalah source of truth)
-            runtime = {
-                str(uid): role
-                for uid, role in self._db.items()
-                if _env_role(uid) == PUBLIC  # hanya runtime overrides
-            }
-            payload = json.dumps({"users": runtime}, indent=2)
             tmp = USERS_FILE.with_suffix(".tmp")
-            tmp.write_text(payload, encoding="utf-8")
+            tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
             tmp.replace(USERS_FILE)
         except Exception as e:
             logger.error("Gagal simpan %s: %s", USERS_FILE, e)
+
+    def _save(self):
+        runtime = {
+            str(uid): role
+            for uid, role in self._db.items()
+            if _env_role(uid) == PUBLIC
+        }
+        self._write_file({
+            "users": runtime,
+            "air_notify_recipients": sorted(self._air_notify_recipients),
+        })
 
     # ── API Publik ──
 
@@ -155,6 +163,51 @@ class AuthManager:
             if role == SUPERADMIN:
                 ids.add(uid)
         return ids
+
+    def get_air_notify_recipient_ids(self) -> set[int]:
+        """Admin yang menerima notif saat role User kontrol air (runtime / Telegram)."""
+        return set(self._air_notify_recipients)
+
+    def list_air_notify_recipients(self) -> list[dict]:
+        """Daftar penerima notif air dengan info role."""
+        rows = []
+        for uid in sorted(self._air_notify_recipients):
+            role = self.get_role(uid)
+            rows.append({
+                "id": uid,
+                "role": role,
+                "role_name": ROLE_NAMES.get(role, "?"),
+            })
+        return rows
+
+    def add_air_notify_recipient(self, target_id: int) -> tuple[bool, str]:
+        """
+        Tambah admin ke daftar penerima notif air (aksi role User).
+        Hanya role Admin yang bisa ditambahkan.
+        """
+        role = self.get_role(target_id)
+        if role != ADMIN:
+            if role == SUPERADMIN:
+                return False, "Superadmin sudah otomatis dapat semua notifikasi."
+            if role == USER:
+                return False, "User tidak bisa jadi penerima. Hanya role Admin."
+            return False, "ID tidak ditemukan atau bukan Admin."
+
+        if target_id in self._air_notify_recipients:
+            return False, "Admin sudah ada di daftar penerima."
+
+        self._air_notify_recipients.add(target_id)
+        self._save()
+        return True, f"Admin `{target_id}` ditambahkan ke notif air."
+
+    def remove_air_notify_recipient(self, target_id: int) -> tuple[bool, str]:
+        """Hapus admin dari daftar penerima notif air."""
+        if target_id not in self._air_notify_recipients:
+            return False, "ID tidak ada di daftar penerima notif air."
+
+        self._air_notify_recipients.discard(target_id)
+        self._save()
+        return True, f"Admin `{target_id}` dihapus dari notif air."
 
     def list_users(self) -> dict:
         env_map = {}
