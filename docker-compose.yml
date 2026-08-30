@@ -5,6 +5,8 @@ services:
       dockerfile: Dockerfile
     container_name: tuyabot
     restart: unless-stopped
+    environment:
+      TZ: Asia/Makassar
 
     # Mount environment & persistent data dari host
     volumes:
