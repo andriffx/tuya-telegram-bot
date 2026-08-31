@@ -97,9 +97,7 @@ class AuthManager:
 
     def _write_file(self, payload: dict):
         try:
-            tmp = USERS_FILE.with_suffix(".tmp")
-            tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-            tmp.replace(USERS_FILE)
+            USERS_FILE.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         except Exception as e:
             logger.error("Gagal simpan %s: %s", USERS_FILE, e)
 
