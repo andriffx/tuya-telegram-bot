@@ -380,19 +380,23 @@ async def _air_watchdog_loop(context: ContextTypes.DEFAULT_TYPE, user):
     """
     check_interval_secs = max(0.01, float(config.AIR_AUTO_OFF_CHECK_MINUTES * 60))
     max_duration_secs = max(check_interval_secs, float(config.AIR_AUTO_OFF_MAX_MINUTES * 60))
-    sample_delay = min(2.0, max(0.005, check_interval_secs / 10))
+    sample_count = max(1, int(getattr(config, "AIR_AUTO_OFF_SAMPLE_COUNT", 3)))
+    configured_delay = float(getattr(config, "AIR_AUTO_OFF_SAMPLE_DELAY_SECONDS", 2.0))
+    sample_delay = min(configured_delay, max(0.005, check_interval_secs / 10))
     start_time = datetime.now()
 
     user_name = getattr(user, "full_name", None) or (user.get("full_name") if isinstance(user, dict) else str(user))
     user_id = getattr(user, "id", None) or (user.get("id") if isinstance(user, dict) else 0)
 
     logger.info(
-        "[AIR WATCHDOG] Dimulai untuk user %s (%s). Cek tiap %sm, idle threshold=%.1fW, max durasi=%sm",
+        "[AIR WATCHDOG] Dimulai untuk user %s (%s). Cek tiap %sm, idle threshold=%.1fW, max durasi=%sm, sample=%sx%.1fs",
         user_name,
         user_id,
         config.AIR_AUTO_OFF_CHECK_MINUTES,
         config.AIR_AUTO_OFF_IDLE_WATT,
         config.AIR_AUTO_OFF_MAX_MINUTES,
+        sample_count,
+        sample_delay,
     )
 
     try:
@@ -421,13 +425,14 @@ async def _air_watchdog_loop(context: ContextTypes.DEFAULT_TYPE, user):
                 await _execute_air_auto_off(context, user, reason="max_time", power_w=0.0)
                 break
 
-            # 3. Multi-sample daya (3 kali dengan jeda sampling)
+            # 3. Multi-sample daya (dinamis dari config env)
             samples = []
-            for _ in range(3):
+            for _ in range(sample_count):
                 p_res = await run_tuya(tuya.get_power_info, "air")
                 if p_res.get("success"):
                     samples.append(float(p_res.get("power_w", 0.0)))
                 await asyncio.sleep(sample_delay)
+
 
 
             avg_watt = sum(samples) / len(samples) if samples else 0.0
