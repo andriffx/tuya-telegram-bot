@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: tuyabot
+    container_name: tuyabot-withdb
     restart: unless-stopped
     environment:
       TZ: Asia/Makassar
