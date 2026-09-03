@@ -819,10 +819,9 @@ def _format_users_list() -> str:
             role = item["role"]
             rname = ROLE_NAMES.get(role, "?")
             icon = "💡" if role == ADMIN else "💧" if role == USER else "👤"
-            added_info = ""
-            if item.get("added_by_name") and item["added_by_name"] != "-":
-                added_info = f"\n    ↳ _Ditambahkan oleh: {item['added_by_name']}_"
-            lines.append(f"  • `{uid}` → {icon} *{rname}*{added_info}")
+            lines.append(f"  • `{uid}` → {icon} *{rname}*")
+
+
     else:
         lines.append("  _(kosong — belum ada user runtime)_")
 
