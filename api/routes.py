@@ -94,8 +94,24 @@ async def _control(name: str, state: bool) -> ControlResponse:
 
     method = tuya.turn_on if state else tuya.turn_off
     result = await run_tuya(method, name)
+
+    try:
+        import database
+        status_str = "success" if result.get("success") else "failed"
+        database.log_activity(
+            user_id=0,
+            user_role="api",
+            device_name=name,
+            action="turn_on" if state else "turn_off",
+            status=status_str,
+            message=result.get("message", ""),
+        )
+    except Exception:
+        pass
+
     return ControlResponse(
         success=result.get("success", False),
         message=result.get("message", ""),
         no_op=result.get("no_op", False),
     )
+

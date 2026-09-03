@@ -28,6 +28,8 @@ from config import TELEGRAM_BOT_TOKEN
 from device_service import run_tuya, tuya
 from auth_manager import auth, ROLE_NAMES, PUBLIC, USER, ADMIN, SUPERADMIN
 from rate_limiter import rate_limit
+import database
+
 
 # ── Logging ke file + console ──
 handlers: list[logging.Handler] = [logging.StreamHandler()]
@@ -269,6 +271,42 @@ async def _notify_control_event(
             logger.warning("Gagal kirim notifikasi ke %s: %s", chat_id, e)
 
 
+async def _log_control_event(user, device_name: str, action: str, result: dict):
+    """Catat aktivitas kontrol perangkat ke MySQL dan snapshot daya jika perangkat air."""
+    try:
+        actor_role = auth.get_role(user.id)
+        role_name = ROLE_NAMES.get(actor_role, "Publik")
+        status = "success" if result.get("success") else "failed"
+        msg = result.get("message", "")
+        if result.get("no_op"):
+            msg = f"{msg} (no_op)"
+
+        database.log_activity(
+            user_id=user.id,
+            user_role=role_name,
+            device_name=device_name,
+            action=f"turn_{action}",
+            status=status,
+            message=msg,
+        )
+
+        # Jika kontrol perangkat air sukses, rekam daya juga dengan source 'action_switch'
+        if device_name == "air" and result.get("success"):
+            power_res = await run_tuya(tuya.get_power_info, "air")
+            if power_res.get("success"):
+                switch_state = (action == "on")
+                database.log_power(
+                    device_name="air",
+                    power_w=float(power_res.get("power_w", 0)),
+                    voltage_v=float(power_res.get("voltage_v", 0)),
+                    current_a=float(power_res.get("current_a", 0)),
+                    switch_state=switch_state,
+                    source="action_switch",
+                )
+    except Exception as e:
+        logger.warning("[DATABASE WARNING] Gagal mencatat log aktivitas/daya ke MySQL: %s", e)
+
+
 async def _control_device_callback(
     query,
     context: ContextTypes.DEFAULT_TYPE,
@@ -283,6 +321,9 @@ async def _control_device_callback(
     await _finalize_control_message(status_msg, result, device_name, query.message)
     asyncio.create_task(
         _notify_control_event(context, query.from_user, device_name, action, result)
+    )
+    asyncio.create_task(
+        _log_control_event(query.from_user, device_name, action, result)
     )
 
 
@@ -301,6 +342,10 @@ async def _control_device_command(
     asyncio.create_task(
         _notify_control_event(context, update.effective_user, device_name, action, result)
     )
+    asyncio.create_task(
+        _log_control_event(update.effective_user, device_name, action, result)
+    )
+
 
 
 # ═══════════════════════════════════════════════════════
@@ -1114,8 +1159,10 @@ def build_application():
 
 def main():
     logger.info("Memulai bot Telegram...")
+    database.init_db(migrate_json=True)
     application = build_application()
     application.run_polling(allowed_updates=Update.ALL_TYPES)
+
 
 
 if __name__ == "__main__":

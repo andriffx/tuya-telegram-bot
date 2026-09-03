@@ -76,3 +76,18 @@ if _allowed_raw:
     ALLOWED_USERS = [int(x.strip()) for x in _allowed_raw.split(",") if x.strip().isdigit()]
 else:
     ALLOWED_USERS = []
+
+
+# ── MySQL Config (External) ──
+MYSQL_CONFIG = {
+    "host": os.getenv("MYSQL_HOST", "127.0.0.1"),
+    "port": int(os.getenv("MYSQL_PORT", "3306")),
+    "user": os.getenv("MYSQL_USER", "root"),
+    "password": os.getenv("MYSQL_PASSWORD", ""),
+    "database": os.getenv("MYSQL_DATABASE", "tuyabot"),
+    "pool_size": int(os.getenv("MYSQL_POOL_SIZE", "5")),
+    "connect_timeout": int(os.getenv("MYSQL_CONNECT_TIMEOUT", "5")),
+}
+
+POWER_LOG_INTERVAL_MINUTES = int(os.getenv("POWER_LOG_INTERVAL_MINUTES", "5"))
+

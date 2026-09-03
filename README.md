@@ -66,13 +66,38 @@ DEVICE_AIR_VER=3.5
 
 # Role-Based Access Control
 SUPERADMIN_USERS=your_telegram_user_id
+
+# Database MySQL Eksternal
+MYSQL_HOST=127.0.0.1
+MYSQL_PORT=3306
+MYSQL_USER=tuya_user
+MYSQL_PASSWORD=your_mysql_password
+MYSQL_DATABASE=tuya_db
+MYSQL_POOL_SIZE=5
+
+# Interval Monitoring Daya (Menit)
+POWER_LOG_INTERVAL_MINUTES=5
 ```
 
-### 4. Jalankan Bot
+### 4. Jalankan Bot & API Dashboard
 
 ```bash
-python bot.py
+python run.py
 ```
+
+---
+
+## 🗄️ Database MySQL (Eksternal)
+
+Bot ini menggunakan database MySQL eksternal dengan driver resmi `mysql-connector-python` dan pooling koneksi bawaan. Tabel-tabel berikut otomatis dibuat saat pertama kali bot dijalankan:
+
+- `bot_users`: Menyimpan daftar user dan role runtime Telegram (`user_id`, `role`, `created_at`, `updated_at`).
+- `bot_air_recipients`: Menyimpan ID admin penerima notifikasi saat role User mengontrol air (`user_id`, `created_at`).
+- `device_activity_logs`: Riwayat aksi switch on/off perangkat (`user_id`, `device_name`, `action`, `status`, `message`, `created_at`).
+- `device_power_logs`: Riwayat metrik daya listrik smart plug (`device_name`, `power_w`, `voltage_v`, `current_a`, `switch_state`, `source`, `created_at`).
+
+> 💡 **Migrasi Otomatis**: Jika Anda sebelumnya memiliki data di `users_db.json`, bot akan otomatis memindahkan data tersebut ke MySQL saat pertama kali start dan mengubah file menjadi `users_db.json.bak`.
+
 
 ---
 
