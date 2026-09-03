@@ -92,4 +92,10 @@ MYSQL_CONFIG = {
 POWER_LOG_INTERVAL_MINUTES = int(os.getenv("POWER_LOG_INTERVAL_MINUTES", "5"))
 LOG_RETENTION_DAYS = int(os.getenv("LOG_RETENTION_DAYS", "60"))
 
+# ── Air Auto-Off Watchdog (Role User) ──
+AIR_AUTO_OFF_IDLE_WATT = float(os.getenv("AIR_AUTO_OFF_IDLE_WATT", "200.0"))
+AIR_AUTO_OFF_CHECK_MINUTES = int(os.getenv("AIR_AUTO_OFF_CHECK_MINUTES", "3"))
+AIR_AUTO_OFF_MAX_MINUTES = int(os.getenv("AIR_AUTO_OFF_MAX_MINUTES", "30"))
+
+
 

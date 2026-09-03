@@ -24,11 +24,14 @@ from telegram.ext import (
     filters,
 )
 
+from typing import Optional
+import config
 from config import TELEGRAM_BOT_TOKEN
 from device_service import run_tuya, tuya
 from auth_manager import auth, ROLE_NAMES, PUBLIC, USER, ADMIN, SUPERADMIN
 from rate_limiter import rate_limit
 import database
+
 
 
 # ── Logging ke file + console ──
@@ -327,6 +330,7 @@ async def _control_device_callback(
     asyncio.create_task(
         _log_control_event(query.from_user, device_name, action, result)
     )
+    _handle_air_watchdog_trigger(context, query.from_user, device_name, action, result)
 
 
 async def _control_device_command(
@@ -347,6 +351,225 @@ async def _control_device_command(
     asyncio.create_task(
         _log_control_event(update.effective_user, device_name, action, result)
     )
+    _handle_air_watchdog_trigger(context, update.effective_user, device_name, action, result)
+
+
+# ── Air Auto-Off Watchdog (Khusus Role User) ──
+_active_air_watchdog: Optional[asyncio.Task] = None
+
+
+def cancel_air_watchdog() -> bool:
+    """Batalkan pemantauan auto-off air jika sedang aktif."""
+    global _active_air_watchdog
+    if _active_air_watchdog and not _active_air_watchdog.done():
+        _active_air_watchdog.cancel()
+        _active_air_watchdog = None
+        logger.info("[AIR WATCHDOG] Pemantauan auto-off dibatalkan.")
+        return True
+    return False
+
+
+async def _air_watchdog_loop(context: ContextTypes.DEFAULT_TYPE, user):
+    """
+    Loop pemantauan pompa air otomatis:
+    - Hanya aktif saat role USER menyalakan air.
+    - Cek setiap AIR_AUTO_OFF_CHECK_MINUTES (default 3 menit).
+    - Melakukan 3x sampling daya dengan jeda 2 detik.
+    - Jika max daya < AIR_AUTO_OFF_IDLE_WATT (default 200W): otomatis matikan pompa.
+    - Jika sudah menyala >= AIR_AUTO_OFF_MAX_MINUTES (default 30 menit): otomatis matikan pompa.
+    """
+    check_interval_secs = max(0.01, float(config.AIR_AUTO_OFF_CHECK_MINUTES * 60))
+    max_duration_secs = max(check_interval_secs, float(config.AIR_AUTO_OFF_MAX_MINUTES * 60))
+    sample_delay = min(2.0, max(0.005, check_interval_secs / 10))
+    start_time = datetime.now()
+
+    user_name = getattr(user, "full_name", None) or (user.get("full_name") if isinstance(user, dict) else str(user))
+    user_id = getattr(user, "id", None) or (user.get("id") if isinstance(user, dict) else 0)
+
+    logger.info(
+        "[AIR WATCHDOG] Dimulai untuk user %s (%s). Cek tiap %sm, idle threshold=%.1fW, max durasi=%sm",
+        user_name,
+        user_id,
+        config.AIR_AUTO_OFF_CHECK_MINUTES,
+        config.AIR_AUTO_OFF_IDLE_WATT,
+        config.AIR_AUTO_OFF_MAX_MINUTES,
+    )
+
+    try:
+        while True:
+            await asyncio.sleep(check_interval_secs)
+
+            # 1. Cek apakah pompa masih menyala di Tuya
+            status_res = await run_tuya(tuya.get_status, "air")
+            if not status_res.get("success"):
+                logger.warning("[AIR WATCHDOG] Gagal membaca status Tuya plug air, coba lagi siklus berikutnya.")
+                continue
+
+            dps = status_res.get("status", {})
+            is_on = bool(dps.get("1", False)) if isinstance(dps, dict) else False
+            if not is_on:
+                logger.info("[AIR WATCHDOG] Pompa air sudah mati, monitoring dihentikan.")
+                break
+
+            # 2. Cek batas waktu maksimal pemakaian
+            elapsed = (datetime.now() - start_time).total_seconds()
+            if elapsed >= max_duration_secs:
+                logger.info(
+                    "[AIR WATCHDOG] Pompa air mencapai durasi maksimal %s menit. Mematikan otomatis...",
+                    config.AIR_AUTO_OFF_MAX_MINUTES,
+                )
+                await _execute_air_auto_off(context, user, reason="max_time", power_w=0.0)
+                break
+
+            # 3. Multi-sample daya (3 kali dengan jeda sampling)
+            samples = []
+            for _ in range(3):
+                p_res = await run_tuya(tuya.get_power_info, "air")
+                if p_res.get("success"):
+                    samples.append(float(p_res.get("power_w", 0.0)))
+                await asyncio.sleep(sample_delay)
+
+
+            avg_watt = sum(samples) / len(samples) if samples else 0.0
+            max_watt = max(samples) if samples else 0.0
+
+            logger.info(
+                "[AIR WATCHDOG] Sampel daya: %s (Max: %.1fW, Avg: %.1fW, Threshold: %.1fW)",
+                samples,
+                max_watt,
+                avg_watt,
+                config.AIR_AUTO_OFF_IDLE_WATT,
+            )
+
+            # 4. Evaluasi kondisi idle
+            if max_watt < config.AIR_AUTO_OFF_IDLE_WATT:
+                logger.info(
+                    "[AIR WATCHDOG] Pompa air terdeteksi idle (max %.1fW < %.1fW). Mematikan otomatis...",
+                    max_watt,
+                    config.AIR_AUTO_OFF_IDLE_WATT,
+                )
+                await _execute_air_auto_off(context, user, reason="idle", power_w=avg_watt)
+                break
+            else:
+                logger.info(
+                    "[AIR WATCHDOG] Pompa air masih aktif digunakan (max %.1fW >= %.1fW). Lanjut pemantauan berikutnya.",
+                    max_watt,
+                    config.AIR_AUTO_OFF_IDLE_WATT,
+                )
+
+    except asyncio.CancelledError:
+        logger.info("[AIR WATCHDOG] Task dibatalkan.")
+    except Exception as e:
+        logger.error("[AIR WATCHDOG ERROR] Terjadi kesalahan: %s", e)
+
+
+async def _execute_air_auto_off(context: ContextTypes.DEFAULT_TYPE, user, reason: str, power_w: float):
+    """Eksekusi pemadaman otomatis, catat ke database, dan kirim notifikasi."""
+    # 1. Matikan via Tuya
+    off_result = await run_tuya(tuya.turn_off, "air")
+    logger.info("[AIR WATCHDOG] Eksekusi turn_off Tuya: %s", off_result)
+
+    user_id = getattr(user, "id", None) or (user.get("id") if isinstance(user, dict) else 0)
+    user_name = getattr(user, "full_name", None) or (user.get("full_name") if isinstance(user, dict) else "User")
+    username = getattr(user, "username", None) or (user.get("username") if isinstance(user, dict) else None)
+
+    # 2. Catat ke MySQL database
+    try:
+        msg = (
+            f"Auto-off: Pompa mencapai batas maksimal {config.AIR_AUTO_OFF_MAX_MINUTES} menit"
+            if reason == "max_time"
+            else f"Auto-off: Pompa terdeteksi idle/tidak digunakan (daya {power_w:.1f}W)"
+        )
+        database.log_activity(
+            user_id=user_id,
+            user_role="User",
+            device_name="air",
+            action="turn_off",
+            status="auto_off",
+            message=msg,
+        )
+        database.log_power(
+            device_name="air",
+            power_w=power_w,
+            voltage_v=0.0,
+            current_a=0.0,
+            switch_state=False,
+            source="auto_off",
+        )
+    except Exception as e:
+        logger.warning("[DATABASE WARNING] Gagal mencatat auto_off ke database: %s", e)
+
+    # 3. Kirim notifikasi ke User yang menyalakan
+    if user_id and context and context.bot:
+        try:
+            if reason == "max_time":
+                user_msg = (
+                    f"💧 *Pompa Air Dimatikan Otomatis*\n\n"
+                    f"Pompa air telah menyala selama *{config.AIR_AUTO_OFF_MAX_MINUTES} menit* (batas maksimal pemakaian).\n"
+                    f"Sistem mematikannya secara otomatis demi keamanan & hemat listrik."
+                )
+            else:
+                user_msg = (
+                    f"💧 *Pompa Air Dimatikan Otomatis*\n\n"
+                    f"Pompa air terdeteksi *sudah tidak digunakan* (daya: `{power_w:.1f} W`).\n"
+                    f"Sistem mematikan pompa secara otomatis demi keamanan & hemat listrik."
+                )
+            await context.bot.send_message(chat_id=user_id, text=user_msg, parse_mode="Markdown")
+        except Exception as e:
+            logger.warning("[AIR WATCHDOG] Gagal kirim notifikasi auto-off ke user %s: %s", user_id, e)
+
+    # 4. Kirim notifikasi ke Admin & Superadmin
+    if context and context.bot:
+        admin_recipients = set(auth.get_superadmin_ids())
+        admin_recipients.update(auth.get_air_notify_recipient_ids())
+        admin_recipients.discard(user_id)
+
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        reason_desc = (
+            f"Mencapai batas waktu maksimal {config.AIR_AUTO_OFF_MAX_MINUTES} menit"
+            if reason == "max_time"
+            else f"Terdeteksi idle / tidak digunakan (daya: `{power_w:.1f} W`)"
+        )
+
+        admin_text = (
+            f"🚨 *Notifikasi Otomatisasi Pompa Air*\n\n"
+            f"Pompa air yang dinyalakan oleh:\n"
+            f"👤 *User*   : `{user_name}` (@{username or 'none'})\n"
+            f"🆔 *ID*     : `{user_id}`\n\n"
+            f"Telah *DIMATIKAN OTOMATIS* oleh sistem.\n"
+            f"📌 *Alasan* : {reason_desc}\n"
+            f"⏰ *Waktu*  : `{timestamp}`"
+        )
+
+        for chat_id in admin_recipients:
+            try:
+                await context.bot.send_message(chat_id=chat_id, text=admin_text, parse_mode="Markdown")
+            except Exception as e:
+                logger.warning("[AIR WATCHDOG] Gagal kirim notifikasi auto-off ke admin %s: %s", chat_id, e)
+
+
+def _handle_air_watchdog_trigger(context: ContextTypes.DEFAULT_TYPE, user, device_name: str, action: str, result: dict):
+    """Picu atau batalkan watchdog air saat tombol/command dijalankan."""
+    global _active_air_watchdog
+    if device_name != "air":
+        return
+
+    # Jika aksi matikan air, batalkan watchdog yang sedang berjalan
+    if action == "off":
+        cancel_air_watchdog()
+        return
+
+    # Jika aksi nyalakan air sukses
+    if action == "on" and result.get("success"):
+        user_id = getattr(user, "id", None) or (user.get("id") if isinstance(user, dict) else 0)
+        actor_role = auth.get_role(user_id)
+        if actor_role == USER:
+            cancel_air_watchdog()
+            _active_air_watchdog = asyncio.create_task(_air_watchdog_loop(context, user))
+        else:
+            # Jika Admin atau Superadmin yang menyalakan, batalkan watchdog agar tidak mati sendiri
+            cancel_air_watchdog()
+
 
 
 
@@ -839,14 +1062,19 @@ async def _callback_air(query, context, action: str, role: int):
             dps = result.get("raw", {})
             switch_val = dps.get("1") if isinstance(dps, dict) else None
             state = "🟢 NYALA" if switch_val else "🔴 MATI"
+            watchdog_info = ""
+            if _active_air_watchdog and not _active_air_watchdog.done():
+                watchdog_info = f"\n\n🛡️ *Auto-Off Watchdog*: 🟢 Aktif (Cek tiap {config.AIR_AUTO_OFF_CHECK_MINUTES}m)"
             await query.message.reply_text(
                 f"💧 *Status Air*: {state}\n"
                 f"⚡ *COK AIR - Power Monitor*\n\n"
                 f"🔌 *Daya*    : `{result['power_w']}` W\n"
                 f"⚡ *Arus*    : `{result['current_a']}` A\n"
-                f"🔋 *Voltase* : `{result['voltage_v']}` V",
+                f"🔋 *Voltase* : `{result['voltage_v']}` V"
+                f"{watchdog_info}",
                 parse_mode="Markdown",
             )
+
         else:
             await query.message.reply_text("❌ Gagal membaca status air.")
     else:
