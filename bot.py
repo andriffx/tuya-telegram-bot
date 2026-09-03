@@ -382,16 +382,43 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     lines = [
         f"📖 *Panduan — {icon} {ROLE_NAMES[role]}*\n",
-        "Gunakan tombol menu di bawah untuk mengakses fitur bot.\n",
-        "*📋 Menu Utama:*",
-        "• 💧 Air — Kontrol smart plug",
-        "• 💡 Lampu — Kontrol lampu",
-        "• 📊 Monitoring — Cek status perangkat",
-        "• 🪪 Akun Saya — Lihat ID & role Anda",
-        "• 🧹 Clean Message — Hapus riwayat chat agar layar bersih",
+        "Gunakan tombol menu di bawah untuk mengakses fitur Anda:\n",
+        "*📋 Menu Anda:*",
     ]
-    if role == SUPERADMIN:
-        lines.append("• 👑 Manajemen Tuyabot — Kelola user, notif air & database")
+
+    if role == PUBLIC:
+        lines.extend([
+            "• 🪪 *Akun Saya* — Cek User ID & role Anda saat ini",
+            "• 🧹 *Clean Message* — Bersihkan riwayat pesan chat",
+            "• 📖 *Bantuan* — Menampilkan panduan ini\n",
+            "ℹ️ *Informasi Akses:*",
+            "Status Anda saat ini adalah *Publik* (belum memiliki izin kontrol perangkat).",
+            "Untuk meminta akses kontrol, buka menu *🪪 Akun Saya*, salin *User ID* Anda, dan kirimkan ke Superadmin.",
+        ])
+    elif role == USER:
+        lines.extend([
+            "• 💧 *Air* — Kontrol smart plug air (nyalakan / status)",
+            "• 📊 *Monitoring* — Pantau status perangkat IoT",
+            "• 🪪 *Akun Saya* — Cek info User ID & role Anda",
+            "• 🧹 *Clean Message* — Bersihkan riwayat pesan chat",
+        ])
+    elif role == ADMIN:
+        lines.extend([
+            "• 💧 *Air* — Kontrol smart plug air (nyala / mati / status)",
+            "• 💡 *Lampu* — Kontrol smart bulb (nyala / mati / status)",
+            "• 📊 *Monitoring* — Pantau status perangkat IoT",
+            "• 🪪 *Akun Saya* — Cek info User ID & role Anda",
+            "• 🧹 *Clean Message* — Bersihkan riwayat pesan chat",
+        ])
+    else:  # SUPERADMIN
+        lines.extend([
+            "• 💧 *Air* — Kontrol penuh smart plug air (nyala / mati / status)",
+            "• 💡 *Lampu* — Kontrol penuh smart bulb (nyala / mati / status)",
+            "• 📊 *Monitoring* — Pantau status perangkat IoT",
+            "• 👑 *Manajemen Tuyabot* — Kelola user, notif air & pembersihan log database",
+            "• 🪪 *Akun Saya* — Cek info profil & ID akun",
+            "• 🧹 *Clean Message* — Bersihkan riwayat pesan chat",
+        ])
 
     lines.extend([
         "\n*💡 Tips:*",
@@ -403,6 +430,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown",
         reply_markup=_main_keyboard(role),
     )
+
 
 
 @rate_limit
@@ -531,8 +559,6 @@ async def devices_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 #  SUPERADMIN COMMANDS (fallback)
 # ═══════════════════════════════════════════════════════
 
-@rate_limit
-@superadmin_only
 def _format_users_list() -> str:
     """Format tampilan daftar user untuk Superadmin."""
     details = auth.list_users_detailed()

@@ -84,4 +84,50 @@ async def test_clean_chat_command():
     assert "Pesan berhasil dibersihkan" in sent_text
 
 
+@pytest.mark.asyncio
+async def test_callback_users_list():
+    import bot
+    fake_query = MagicMock()
+    fake_query.message.reply_text = AsyncMock()
+    fake_context = MagicMock()
+
+    await bot._callback_users(fake_query, fake_context, "list", bot.SUPERADMIN)
+
+    fake_query.message.reply_text.assert_called_once()
+    reply = fake_query.message.reply_text.call_args[0][0]
+    assert "Daftar User" in reply
+
+
+@pytest.mark.asyncio
+async def test_help_command_roles():
+    import bot
+    fake_update = MagicMock()
+    fake_context = MagicMock()
+    fake_update.message.reply_text = AsyncMock()
+
+    # 1. Test PUBLIC role
+    with patch("auth_manager.auth.get_role", return_value=bot.PUBLIC):
+        await bot.help_command(fake_update, fake_context)
+        public_text = fake_update.message.reply_text.call_args[0][0]
+        assert "belum memiliki izin kontrol perangkat" in public_text
+        assert "Air —" not in public_text
+        assert "Lampu —" not in public_text
+
+    # 2. Test USER role
+    with patch("auth_manager.auth.get_role", return_value=bot.USER):
+        await bot.help_command(fake_update, fake_context)
+        user_text = fake_update.message.reply_text.call_args[0][0]
+        assert "Air" in user_text
+        assert "Lampu" not in user_text
+        assert "Manajemen Tuyabot" not in user_text
+
+    # 3. Test SUPERADMIN role
+    with patch("auth_manager.auth.get_role", return_value=bot.SUPERADMIN):
+        await bot.help_command(fake_update, fake_context)
+        admin_text = fake_update.message.reply_text.call_args[0][0]
+        assert "Manajemen Tuyabot" in admin_text
+
+
+
+
 
