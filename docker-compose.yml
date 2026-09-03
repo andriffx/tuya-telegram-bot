@@ -8,13 +8,13 @@ services:
     environment:
       TZ: Asia/Makassar
     env_file:
-      - .env
+      - path: .env
+        required: false
+
 
     # Mount persistent data dari host (JANGAN mount .env di sini agar Docker tidak membuat folder .env otomatis)
     volumes:
       - ./logs:/app/logs             # persist logs
-
-
 
     # tinytuya needs host network to reach local Tuya devices
     # (remove if using Tuya Cloud API only)
