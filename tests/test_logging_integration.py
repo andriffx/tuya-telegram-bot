@@ -5,7 +5,7 @@ import pytest
 async def test_action_logging_helper():
     with patch("database.log_activity") as mock_log_act, \
          patch("database.log_power") as mock_log_pwr, \
-         patch("device_service.run_tuya", new_callable=AsyncMock) as mock_tuya:
+         patch("bot.run_tuya", new_callable=AsyncMock) as mock_tuya:
         
         mock_tuya.return_value = {
             "success": True,
@@ -14,6 +14,7 @@ async def test_action_logging_helper():
             "current_a": 1.13,
             "raw": {"1": True}
         }
+
 
         import bot
         fake_user = MagicMock()

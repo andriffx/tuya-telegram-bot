@@ -6,10 +6,13 @@ Menggunakan connection pool resmi dari mysql-connector-python dan Pure Direct Qu
 import json
 import logging
 import os
+import sys
 import threading
+import traceback
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Dict, Optional, Set
+
 
 import mysql.connector
 from mysql.connector import pooling
@@ -162,6 +165,21 @@ def init_db(migrate_json: bool = True) -> bool:
             INDEX idx_created_at (created_at)
         );
         """,
+        """
+        CREATE TABLE IF NOT EXISTS app_error_logs (
+            id BIGINT AUTO_INCREMENT PRIMARY KEY,
+            level VARCHAR(20) NOT NULL,
+            logger_name VARCHAR(100) NOT NULL,
+            message TEXT NOT NULL,
+            exception_trace MEDIUMTEXT NULL,
+            file_name VARCHAR(255) NULL,
+            line_number INT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_level (level),
+            INDEX idx_logger_name (logger_name),
+            INDEX idx_created_at (created_at)
+        );
+        """,
     ]
 
     try:
@@ -191,6 +209,11 @@ def init_db(migrate_json: bool = True) -> bool:
         logger.critical("[DATABASE CRITICAL] Gagal membuat tabel di MySQL: %s", e)
         return False
 
+    # Pasang logger handler untuk error aplikasi
+    try:
+        setup_db_logging()
+    except Exception as err_log:
+        logger.warning("Gagal memasang MySQLDatabaseLogHandler: %s", err_log)
 
     if migrate_json:
         try:
@@ -198,7 +221,15 @@ def init_db(migrate_json: bool = True) -> bool:
         except Exception as e:
             logger.error("[DATABASE ERROR] Gagal migrasi data dari JSON: %s", e)
 
+    # Jalankan pembersihan log lawas saat inisialisasi startup
+    try:
+        cleanup_old_logs()
+    except Exception as e:
+        logger.warning("Housekeeping awal saat startup gagal: %s", e)
+
     return True
+
+
 
 
 def migrate_from_json_if_needed() -> None:
@@ -425,3 +456,169 @@ def log_power(
     except Exception as e:
         logger.error("[DATABASE ERROR] Gagal mencatat power log ke MySQL: %s", e)
         return False
+
+
+# ── Logging: Application Error Logs ke MySQL ──
+
+def log_app_error(
+    level: str,
+    logger_name: str,
+    message: str,
+    exception_trace: Optional[str] = None,
+    file_name: Optional[str] = None,
+    line_number: Optional[int] = None,
+) -> bool:
+    """Simpan log error aplikasi ke tabel app_error_logs."""
+    try:
+        with get_db_connection() as (conn, cursor):
+            cursor.execute(
+                """
+                INSERT INTO app_error_logs (level, logger_name, message, exception_trace, file_name, line_number)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                """,
+                (level, logger_name, message, exception_trace, file_name, line_number),
+            )
+            return True
+    except Exception as e:
+        # PENTING: JANGAN gunakan logger.error di sini agar tidak memicu loop rekursif!
+        print(f"[DATABASE WARN] Gagal menyimpan error log ke MySQL: {e}", file=sys.stderr)
+        return False
+
+
+class MySQLDatabaseLogHandler(logging.Handler):
+    """Handler logging untuk otomatis menyimpan log level ERROR dan CRITICAL ke MySQL."""
+
+    def __init__(self, level: int = logging.ERROR):
+        super().__init__(level)
+        self._is_handling = False
+
+    def emit(self, record: logging.LogRecord) -> None:
+        # Mencegah reentrancy / recursive loop
+        if self._is_handling:
+            return
+
+        # Abaikan log error internal dari koneksi database agar tidak loop saat DB putus
+        msg_str = record.getMessage()
+        if record.name == "database" or "[DATABASE" in msg_str:
+            return
+
+        try:
+            self._is_handling = True
+            exc_trace = None
+            if record.exc_info:
+                exc_trace = "".join(traceback.format_exception(*record.exc_info))
+            elif record.exc_text:
+                exc_trace = record.exc_text
+
+            log_app_error(
+                level=record.levelname,
+                logger_name=record.name,
+                message=msg_str,
+                exception_trace=exc_trace,
+                file_name=record.filename,
+                line_number=record.lineno,
+            )
+        except Exception:
+            pass
+        finally:
+            self._is_handling = False
+
+
+def setup_db_logging(level: int = logging.ERROR) -> None:
+    """Pasang MySQLDatabaseLogHandler ke root logger agar setiap error otomatis tercatat di DB."""
+    root_logger = logging.getLogger()
+    for h in root_logger.handlers:
+        if isinstance(h, MySQLDatabaseLogHandler):
+            return
+    handler = MySQLDatabaseLogHandler(level=level)
+    root_logger.addHandler(handler)
+    logger.info("MySQLDatabaseLogHandler terpasang ke root logger (level >= %s).", logging.getLevelName(level))
+
+
+def get_recent_app_errors(limit: int = 20) -> list[dict]:
+    """Ambil riwayat error aplikasi terbaru dari tabel app_error_logs."""
+    try:
+        with get_db_connection() as (conn, cursor):
+            cursor.execute(
+                """
+                SELECT id, level, logger_name, message, exception_trace, file_name, line_number, created_at
+                FROM app_error_logs
+                ORDER BY created_at DESC
+                LIMIT %s
+                """,
+                (limit,),
+            )
+            rows = cursor.fetchall()
+            return [
+                {
+                    "id": r[0],
+                    "level": r[1],
+                    "logger_name": r[2],
+                    "message": r[3],
+                    "exception_trace": r[4],
+                    "file_name": r[5],
+                    "line_number": r[6],
+                    "created_at": str(r[7]),
+                }
+                for r in rows
+            ]
+    except Exception as e:
+        logger.error("[DATABASE ERROR] Gagal mengambil app error logs dari MySQL: %s", e)
+        return []
+
+
+# ── Housekeeping / Log Retention ──
+
+def cleanup_old_logs(retention_days: Optional[int] = None) -> Dict[str, int]:
+    """
+    Hapus log lawas (device_power_logs, device_activity_logs, app_error_logs)
+    yang lebih tua dari retention_days hari untuk mencegah pembengkakan database.
+    """
+    if retention_days is None:
+        from config import LOG_RETENTION_DAYS
+        retention_days = LOG_RETENTION_DAYS
+
+    results = {
+        "power_logs_deleted": 0,
+        "activity_logs_deleted": 0,
+        "error_logs_deleted": 0,
+    }
+
+    try:
+        with get_db_connection() as (conn, cursor):
+            # 1. Prune power logs
+            cursor.execute(
+                "DELETE FROM device_power_logs WHERE created_at < NOW() - INTERVAL %s DAY",
+                (retention_days,),
+            )
+            results["power_logs_deleted"] = cursor.rowcount
+
+            # 2. Prune activity logs
+            cursor.execute(
+                "DELETE FROM device_activity_logs WHERE created_at < NOW() - INTERVAL %s DAY",
+                (retention_days,),
+            )
+            results["activity_logs_deleted"] = cursor.rowcount
+
+            # 3. Prune app error logs
+            cursor.execute(
+                "DELETE FROM app_error_logs WHERE created_at < NOW() - INTERVAL %s DAY",
+                (retention_days,),
+            )
+            results["error_logs_deleted"] = cursor.rowcount
+
+        total_cleaned = sum(results.values())
+        logger.info(
+            "Housekeeping database selesai (retention=%s hari). Total dibersihkan: %s (Power: %s, Activity: %s, Error: %s)",
+            retention_days,
+            total_cleaned,
+            results["power_logs_deleted"],
+            results["activity_logs_deleted"],
+            results["error_logs_deleted"],
+        )
+        return results
+    except Exception as e:
+        logger.error("[DATABASE ERROR] Gagal menjalankan housekeeping/cleanup log lama: %s", e)
+        return results
+
+

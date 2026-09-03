@@ -63,7 +63,7 @@ def _main_keyboard(role: int) -> ReplyKeyboardMarkup:
         kb = [
             ["💧 Air", "💡 Lampu"],
             ["📊 Monitoring"],
-            ["👑 Manajemen User"],
+            ["👑 Manajemen Tuyabot"],
             ["🪪 Akun Saya"],
         ]
     return ReplyKeyboardMarkup(kb, resize_keyboard=True)
@@ -107,7 +107,9 @@ def _users_inline() -> InlineKeyboardMarkup:
             InlineKeyboardButton("➖ Hapus User", callback_data="users|remove"),
         ],
         [InlineKeyboardButton("🔔 Notif Air (User)", callback_data="notify|menu")],
+        [InlineKeyboardButton("🧹 Bersihkan Log Database", callback_data="users|cleanlogs")],
     ])
+
 
 
 def _notify_inline() -> InlineKeyboardMarkup:
@@ -388,7 +390,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• 🪪 Akun Saya — Lihat ID & role Anda",
     ]
     if role == SUPERADMIN:
-        lines.append("• 👑 Manajemen User — Kelola akses & notif air (User)")
+        lines.append("• 👑 Manajemen Tuyabot — Kelola user, notif air & database")
 
     lines.extend([
         "\n*💡 Tips:*",
@@ -595,6 +597,26 @@ async def removeuser_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
 
 
+@rate_limit
+@superadmin_only
+async def cleanlogs_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Pembersihan manual log database lebih tua dari batas retensi."""
+    from config import LOG_RETENTION_DAYS
+    await update.message.reply_text(f"🧹 Menjalankan pembersihan log lama (> {LOG_RETENTION_DAYS} hari)...")
+    res = await asyncio.to_thread(database.cleanup_old_logs)
+    total = sum(res.values())
+    await update.message.reply_text(
+        f"✅ *Pembersihan Database Selesai!*\n\n"
+        f"📊 *Hasil Housekeeping (Log > {LOG_RETENTION_DAYS} hari):*\n"
+        f"• ⚡ Power Logs: `{res.get('power_logs_deleted', 0)}` baris\n"
+        f"• 📱 Activity Logs: `{res.get('activity_logs_deleted', 0)}` baris\n"
+        f"• ⚠️ App Error Logs: `{res.get('error_logs_deleted', 0)}` baris\n\n"
+        f"Total: *{total}* baris log berhasil dibersihkan.",
+        parse_mode="Markdown"
+    )
+
+
+
 # ═══════════════════════════════════════════════════════
 #  MENU HANDLER (ReplyKeyboard)
 # ═══════════════════════════════════════════════════════
@@ -664,8 +686,8 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif text == "🪪 Akun Saya":
         await whoami_command(update, context)
 
-    # ── 👑 Manajemen User ──
-    elif text == "👑 Manajemen User":
+    # ── 👑 Manajemen Tuyabot ──
+    elif text in ("👑 Manajemen Tuyabot", "👑 Manajemen User"):
         if role < SUPERADMIN:
             await update.message.reply_text(
                 "⛔ Akses ditolak.",
@@ -673,7 +695,7 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
         await update.message.reply_text(
-            "👑 *Manajemen User*\nPilih aksi:",
+            "👑 *Manajemen Tuyabot*\nPilih aksi:",
             parse_mode="Markdown",
             reply_markup=_users_inline(),
         )
@@ -844,6 +866,23 @@ async def _callback_users(query, context, action: str, role: int):
             parse_mode="Markdown",
         )
         context.user_data["awaiting_remove_user_id"] = True
+
+    elif action == "cleanlogs":
+        from config import LOG_RETENTION_DAYS
+        await query.message.reply_text(f"🧹 Menjalankan pembersihan log lama (> {LOG_RETENTION_DAYS} hari)...")
+        res = await asyncio.to_thread(database.cleanup_old_logs)
+        total = sum(res.values())
+        await query.message.reply_text(
+            f"✅ *Pembersihan Database Selesai!*\n\n"
+            f"📊 *Hasil Housekeeping (Log > {LOG_RETENTION_DAYS} hari):*\n"
+            f"• ⚡ Power Logs: `{res.get('power_logs_deleted', 0)}` baris\n"
+            f"• 📱 Activity Logs: `{res.get('activity_logs_deleted', 0)}` baris\n"
+            f"• ⚠️ App Error Logs: `{res.get('error_logs_deleted', 0)}` baris\n\n"
+            f"Total: *{total}* baris log berhasil dibersihkan.",
+            parse_mode="Markdown",
+            reply_markup=_users_inline(),
+        )
+
 
 
 def _format_notify_list() -> str:
@@ -1080,7 +1119,8 @@ async def unknown_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     error = context.error
-    logger.error("Update %s caused error %s", update, error)
+    logger.error("Update %s caused error %s", update, error, exc_info=error)
+
 
     if not update:
         return
@@ -1134,7 +1174,9 @@ def build_application():
     application.add_handler(CommandHandler("users", users_command))
     application.add_handler(CommandHandler("allowuser", allowuser_command))
     application.add_handler(CommandHandler("removeuser", removeuser_command))
+    application.add_handler(CommandHandler("cleanlogs", cleanlogs_command))
     application.add_handler(CallbackQueryHandler(callback_handler))
+
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, menu_handler))
     application.add_handler(MessageHandler(filters.TEXT | filters.COMMAND, unknown_message))
     application.add_error_handler(error_handler)

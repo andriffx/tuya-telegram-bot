@@ -84,6 +84,27 @@ async def power_monitor_loop():
             break
 
 
+async def housekeeping_loop(interval_hours: int = 24):
+    """Worker background untuk membersihkan log lawas setiap 24 jam."""
+    logger.info("Database housekeeping worker aktif (interval=%s jam).", interval_hours)
+    interval_secs = interval_hours * 3600
+    while True:
+        try:
+            await asyncio.sleep(interval_secs)
+        except asyncio.CancelledError:
+            logger.info("Housekeeping worker dibatalkan (shutdown).")
+            break
+
+        try:
+            logger.info("Menjalankan periodic database housekeeping...")
+            await asyncio.to_thread(database.cleanup_old_logs)
+        except asyncio.CancelledError:
+            logger.info("Housekeeping worker dibatalkan (shutdown).")
+            break
+        except Exception as e:
+            logger.error("Error pada siklus housekeeping database: %s", e)
+
+
 async def run_all():
     if not validate_config():
         logger.error("Konfigurasi tidak lengkap.")
@@ -113,21 +134,24 @@ async def run_all():
         logger.info("Bot Telegram aktif")
         logger.info("Dashboard API: http://%s:%s/", API_HOST, API_PORT)
 
-        # Jalankan background periodic power monitor
+        # Jalankan background periodic power monitor & housekeeping
         power_task = asyncio.create_task(power_monitor_loop())
+        housekeeping_task = asyncio.create_task(housekeeping_loop())
 
         try:
             await server.serve()
         finally:
             power_task.cancel()
+            housekeeping_task.cancel()
             try:
-                await power_task
-            except asyncio.CancelledError:
+                await asyncio.gather(power_task, housekeeping_task, return_exceptions=True)
+            except Exception:
                 pass
 
             await application.updater.stop()
             await application.stop()
             await application.shutdown()
+
 
 
 def main():

@@ -86,3 +86,69 @@ def test_database_error_logging(caplog):
         res = database.log_power("air", 0.0, 220.0, 0.0, False, "periodic")
         assert res is False
         assert "[DATABASE ERROR]" in caplog.text
+
+
+def test_app_error_logging_and_handler():
+    with patch("database.get_db_connection") as mock_get_conn:
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+        mock_get_conn.return_value.__enter__.return_value = (mock_conn, mock_cursor)
+
+        import database
+        import logging
+
+        # 1. Test direct log_app_error
+        res = database.log_app_error(
+            level="ERROR",
+            logger_name="test_logger",
+            message="Test error message",
+            exception_trace="Traceback...",
+            file_name="test.py",
+            line_number=42,
+        )
+        assert res is True
+        mock_cursor.execute.assert_called()
+
+        # 2. Test get_recent_app_errors
+        mock_cursor.fetchall.return_value = [
+            (1, "ERROR", "test_logger", "Test message", "Traceback...", "test.py", 42, "2026-09-03 12:00:00")
+        ]
+        errors = database.get_recent_app_errors(5)
+        assert len(errors) == 1
+        assert errors[0]["id"] == 1
+        assert errors[0]["message"] == "Test message"
+
+        # 3. Test MySQLDatabaseLogHandler
+        handler = database.MySQLDatabaseLogHandler(level=logging.ERROR)
+        record = logging.LogRecord(
+            name="app_module",
+            level=logging.ERROR,
+            pathname="app.py",
+            lineno=10,
+            msg="App crashed!",
+            args=(),
+            exc_info=None,
+        )
+        handler.emit(record)
+        # Verify execute was called for the emitted log record
+        mock_cursor.execute.assert_called()
+
+
+def test_database_cleanup_old_logs():
+    with patch("database.get_db_connection") as mock_get_conn:
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+        mock_get_conn.return_value.__enter__.return_value = (mock_conn, mock_cursor)
+
+        import database
+
+        mock_cursor.rowcount = 15
+        res = database.cleanup_old_logs(retention_days=30)
+        assert res["power_logs_deleted"] == 15
+        assert res["activity_logs_deleted"] == 15
+        assert res["error_logs_deleted"] == 15
+        assert mock_cursor.execute.call_count == 3
+
+
