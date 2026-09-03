@@ -7,11 +7,13 @@ services:
     restart: unless-stopped
     environment:
       TZ: Asia/Makassar
+    env_file:
+      - .env
 
-    # Mount environment & persistent data dari host
+    # Mount persistent data dari host (JANGAN mount .env di sini agar Docker tidak membuat folder .env otomatis)
     volumes:
-      - ./.env:/app/.env:ro          # read-only env
       - ./logs:/app/logs             # persist logs
+
 
 
     # tinytuya needs host network to reach local Tuya devices
