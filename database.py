@@ -567,7 +567,120 @@ def get_recent_app_errors(limit: int = 20) -> list[dict]:
         return []
 
 
+def get_recent_power_logs(device_name: Optional[str] = None, limit: int = 50) -> list[dict]:
+    """Ambil data konsumsi daya terbaru dari device_power_logs."""
+    try:
+        with get_db_connection() as (conn, cursor):
+            if device_name:
+                cursor.execute(
+                    """
+                    SELECT id, device_name, power_w, voltage_v, current_a, switch_state, source, created_at
+                    FROM device_power_logs
+                    WHERE device_name = %s
+                    ORDER BY created_at DESC
+                    LIMIT %s
+                    """,
+                    (device_name, limit),
+                )
+            else:
+                cursor.execute(
+                    """
+                    SELECT id, device_name, power_w, voltage_v, current_a, switch_state, source, created_at
+                    FROM device_power_logs
+                    ORDER BY created_at DESC
+                    LIMIT %s
+                    """,
+                    (limit,),
+                )
+            rows = cursor.fetchall()
+            return [
+                {
+                    "id": r[0],
+                    "device_name": r[1],
+                    "power_w": float(r[2]),
+                    "voltage_v": float(r[3]),
+                    "current_a": float(r[4]),
+                    "switch_state": bool(r[5]) if r[5] is not None else None,
+                    "source": r[6],
+                    "created_at": str(r[7]),
+                }
+                for r in rows
+            ]
+    except Exception as e:
+        logger.error("[DATABASE ERROR] Gagal mengambil recent power logs dari MySQL: %s", e)
+        return []
+
+
+def get_recent_activities(limit: int = 50) -> list[dict]:
+    """Ambil data riwayat aktivitas perangkat terbaru dari device_activity_logs."""
+    try:
+        with get_db_connection() as (conn, cursor):
+            cursor.execute(
+                """
+                SELECT id, user_id, user_role, device_name, action, status, message, created_at
+                FROM device_activity_logs
+                ORDER BY created_at DESC
+                LIMIT %s
+                """,
+                (limit,),
+            )
+            rows = cursor.fetchall()
+            return [
+                {
+                    "id": r[0],
+                    "user_id": r[1],
+                    "user_role": r[2],
+                    "device_name": r[3],
+                    "action": r[4],
+                    "status": r[5],
+                    "message": r[6],
+                    "created_at": str(r[7]),
+                }
+                for r in rows
+            ]
+    except Exception as e:
+        logger.error("[DATABASE ERROR] Gagal mengambil recent activity logs dari MySQL: %s", e)
+        return []
+
+
+def get_db_stats() -> dict:
+    """Ambil statistik ringkas tabel database MySQL."""
+    from config import LOG_RETENTION_DAYS, MYSQL_CONFIG
+    stats = {
+        "connected": False,
+        "database": MYSQL_CONFIG.get("database", "tuyabot"),
+        "host": MYSQL_CONFIG.get("host", "localhost"),
+        "retention_days": LOG_RETENTION_DAYS,
+        "total_power_logs": 0,
+        "total_activity_logs": 0,
+        "total_error_logs": 0,
+        "total_runtime_users": 0,
+        "total_air_recipients": 0,
+    }
+    try:
+        with get_db_connection() as (conn, cursor):
+            stats["connected"] = True
+            cursor.execute("SELECT COUNT(*) FROM device_power_logs")
+            stats["total_power_logs"] = cursor.fetchone()[0]
+
+            cursor.execute("SELECT COUNT(*) FROM device_activity_logs")
+            stats["total_activity_logs"] = cursor.fetchone()[0]
+
+            cursor.execute("SELECT COUNT(*) FROM app_error_logs")
+            stats["total_error_logs"] = cursor.fetchone()[0]
+
+            cursor.execute("SELECT COUNT(*) FROM bot_users")
+            stats["total_runtime_users"] = cursor.fetchone()[0]
+
+            cursor.execute("SELECT COUNT(*) FROM bot_air_recipients")
+            stats["total_air_recipients"] = cursor.fetchone()[0]
+    except Exception as e:
+        logger.warning("[DATABASE WARNING] Gagal mengambil statistik database: %s", e)
+    return stats
+
+
 # ── Housekeeping / Log Retention ──
+
 
 def cleanup_old_logs(retention_days: Optional[int] = None) -> Dict[str, int]:
     """

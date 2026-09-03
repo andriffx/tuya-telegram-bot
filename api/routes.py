@@ -1,8 +1,12 @@
 """REST API routes untuk web dashboard."""
 
+from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 
+import database
+from auth_manager import auth
 from api.deps import get_device_names, verify_api_key
+
 from api.schemas import (
     ControlResponse,
     DeviceListResponse,
@@ -114,4 +118,58 @@ async def _control(name: str, state: bool) -> ControlResponse:
         message=result.get("message", ""),
         no_op=result.get("no_op", False),
     )
+
+
+# ── Database & Telemetry Endpoints ──
+
+
+@router.get("/db/stats")
+async def get_database_stats():
+    """Statistik ringkas database MySQL & retensi log."""
+    return database.get_db_stats()
+
+
+@router.get("/db/power-logs")
+async def get_power_logs(limit: int = 50, device: Optional[str] = None):
+    """Ambil data konsumsi daya terbaru dari device_power_logs."""
+    limit = max(1, min(limit, 200))
+    return database.get_recent_power_logs(device_name=device, limit=limit)
+
+
+@router.get("/db/activities")
+async def get_activity_logs(limit: int = 50):
+    """Ambil riwayat aktivitas kontrol perangkat dari device_activity_logs."""
+    limit = max(1, min(limit, 200))
+    return database.get_recent_activities(limit=limit)
+
+
+@router.get("/db/users")
+async def get_users_list():
+    """Daftar user ENV & MySQL serta daftar penerima notifikasi air."""
+    details = auth.list_users_detailed()
+    recipients = list(auth.get_air_notify_recipient_ids())
+    return {
+        "env": details.get("env", {}),
+        "runtime": details.get("runtime", []),
+        "air_recipients": recipients,
+    }
+
+
+@router.get("/db/errors")
+async def get_error_logs(limit: int = 50):
+    """Ambil log error aplikasi dari app_error_logs."""
+    limit = max(1, min(limit, 200))
+    return database.get_recent_app_errors(limit=limit)
+
+
+@router.post("/db/cleanup")
+async def cleanup_database(retention_days: Optional[int] = None):
+    """Jalankan pembersihan log database (housekeeping) secara manual."""
+    res = database.cleanup_old_logs(retention_days=retention_days)
+    return {
+        "success": True,
+        "message": f"Pembersihan database selesai: {sum(res.values())} baris log dihapus",
+        "details": res,
+    }
+
 

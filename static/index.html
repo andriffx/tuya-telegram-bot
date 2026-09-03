@@ -3,310 +3,1641 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Smart Home Dashboard</title>
+  <title>Tuya IoT Telemetry & Control Center</title>
+  <meta name="description" content="Dashboard kontrol IoT lokal dan telemetri database MySQL untuk Tuya Smart Plug & Lampu">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <style>
     :root {
-      --bg: #0f1419;
-      --card: #1a2332;
-      --border: #2d3a4f;
-      --text: #e7ecf3;
-      --muted: #8b9cb3;
-      --green: #22c55e;
-      --red: #ef4444;
-      --blue: #3b82f6;
-      --yellow: #eab308;
+      --bg: #080c14;
+      --bg-surface: #0f172a;
+      --card-bg: rgba(17, 24, 39, 0.75);
+      --card-elevated: rgba(30, 41, 59, 0.65);
+      --border: rgba(255, 255, 255, 0.08);
+      --border-hover: rgba(255, 255, 255, 0.18);
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      
+      --cyan: #0ea5e9;
+      --cyan-glow: rgba(14, 165, 233, 0.25);
+      --green: #10b981;
+      --green-glow: rgba(16, 185, 129, 0.25);
+      --red: #f43f5e;
+      --red-glow: rgba(244, 63, 94, 0.25);
+      --amber: #f59e0b;
+      --amber-glow: rgba(245, 158, 11, 0.2);
+      --purple: #a855f7;
+      --purple-glow: rgba(168, 85, 247, 0.2);
+      --indigo: #6366f1;
+
+      --radius-sm: 8px;
+      --radius-md: 12px;
+      --radius-lg: 18px;
+      --radius-xl: 24px;
+      --transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
     }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
     body {
-      font-family: system-ui, -apple-system, sans-serif;
-      background: var(--bg);
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: var(--bg);
+      background-image: 
+        radial-gradient(at 0% 0%, rgba(14, 165, 233, 0.08) 0px, transparent 50%),
+        radial-gradient(at 100% 100%, rgba(99, 102, 241, 0.06) 0px, transparent 50%),
+        radial-gradient(at 50% 50%, rgba(15, 23, 42, 0.5) 0px, transparent 100%);
+      background-attachment: fixed;
       color: var(--text);
       min-height: 100vh;
-      padding: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
     }
+
+    /* ── Topbar / Header ── */
     header {
+      background: rgba(15, 23, 42, 0.85);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      padding: 0.875rem 2rem;
+    }
+
+    .header-content {
+      max-width: 1440px;
+      margin: 0 auto;
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 1.5rem;
       flex-wrap: wrap;
       gap: 1rem;
     }
-    h1 { font-size: 1.5rem; font-weight: 600; }
-    .subtitle { color: var(--muted); font-size: 0.875rem; margin-top: 0.25rem; }
-    .auth-bar {
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.875rem;
+    }
+
+    .brand-icon {
+      width: 40px;
+      height: 40px;
+      background: linear-gradient(135deg, #0ea5e9, #6366f1);
+      border-radius: var(--radius-md);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 14px var(--cyan-glow);
+      font-size: 1.25rem;
+    }
+
+    .brand-title {
+      font-size: 1.125rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      background: linear-gradient(135deg, #ffffff 40%, #94a3b8 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+
+    }
+
+    .brand-subtitle {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .live-pulse {
+      width: 8px;
+      height: 8px;
+      background: var(--green);
+      border-radius: 50%;
+      box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+      70% { box-shadow: 0 0 0 8px rgba(16, 185, 129, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+
+    .api-key-box {
+      display: flex;
+      align-items: center;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 0.25rem 0.5rem;
+      transition: var(--transition);
+    }
+
+    .api-key-box:focus-within {
+      border-color: var(--cyan);
+      box-shadow: 0 0 0 3px var(--cyan-glow);
+    }
+
+    .api-key-input {
+      background: transparent;
+      border: none;
+      outline: none;
+      color: var(--text);
+      font-size: 0.8125rem;
+      padding: 0.375rem 0.5rem;
+      font-family: 'JetBrains Mono', monospace;
+      width: 170px;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      padding: 0.5rem 1rem;
+      border-radius: var(--radius-md);
+      font-size: 0.8125rem;
+      font-weight: 600;
+      border: 1px solid transparent;
+      cursor: pointer;
+      transition: var(--transition);
+      user-select: none;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #0ea5e9, #0284c7);
+      color: white;
+      box-shadow: 0 2px 8px var(--cyan-glow);
+    }
+    .btn-primary:hover {
+      background: linear-gradient(135deg, #38bdf8, #0ea5e9);
+      transform: translateY(-1px);
+    }
+
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.05);
+      border-color: var(--border);
+      color: var(--text);
+    }
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.1);
+      border-color: var(--border-hover);
+      color: white;
+    }
+
+    .btn-success {
+      background: linear-gradient(135deg, #10b981, #059669);
+      color: white;
+      box-shadow: 0 2px 8px var(--green-glow);
+    }
+    .btn-success:hover {
+      background: linear-gradient(135deg, #34d399, #10b981);
+    }
+
+    .btn-danger {
+      background: linear-gradient(135deg, #f43f5e, #e11d48);
+      color: white;
+      box-shadow: 0 2px 8px var(--red-glow);
+    }
+    .btn-danger:hover {
+      background: linear-gradient(135deg, #fb7185, #f43f5e);
+    }
+
+    .btn:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+      transform: none !important;
+    }
+
+    .btn-sm {
+      padding: 0.35rem 0.75rem;
+      font-size: 0.75rem;
+    }
+
+    /* ── Main Container ── */
+    main {
+      flex: 1;
+      max-width: 1440px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 1.5rem 2rem 3rem;
+    }
+
+    /* ── Quick Stats Grid ── */
+    .stat-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .stat-card {
+      background: var(--card-bg);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 1.25rem;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      transition: var(--transition);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .stat-card:hover {
+      border-color: var(--border-hover);
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+    }
+
+    .stat-icon-wrapper {
+      width: 48px;
+      height: 48px;
+      border-radius: var(--radius-md);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.5rem;
+      flex-shrink: 0;
+    }
+
+    .stat-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .stat-label {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-weight: 600;
+    }
+
+    .stat-number {
+      font-size: 1.375rem;
+      font-weight: 700;
+      color: var(--text);
+      font-family: 'JetBrains Mono', monospace;
+      margin-top: 0.125rem;
+    }
+
+    .stat-desc {
+      font-size: 0.75rem;
+      color: var(--text-dim);
+      margin-top: 0.125rem;
+    }
+
+    /* ── Navigation Tabs ── */
+    .nav-tabs {
       display: flex;
       gap: 0.5rem;
-      align-items: center;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 1.5rem;
+      overflow-x: auto;
+      padding-bottom: 0.5rem;
     }
-    input {
-      background: var(--card);
-      border: 1px solid var(--border);
-      color: var(--text);
-      padding: 0.5rem 0.75rem;
-      border-radius: 8px;
+
+    .nav-tab {
+      padding: 0.625rem 1.125rem;
+      border-radius: var(--radius-md);
       font-size: 0.875rem;
-      min-width: 200px;
-    }
-    button {
-      border: none;
-      border-radius: 8px;
-      padding: 0.5rem 1rem;
-      font-size: 0.875rem;
-      font-weight: 500;
+      font-weight: 600;
+      color: var(--text-muted);
       cursor: pointer;
-      transition: opacity 0.15s;
+      border: 1px solid transparent;
+      background: transparent;
+      transition: var(--transition);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      white-space: nowrap;
     }
-    button:hover { opacity: 0.85; }
-    button:disabled { opacity: 0.5; cursor: not-allowed; }
-    .btn-save { background: var(--blue); color: white; }
-    .btn-refresh { background: var(--border); color: var(--text); }
-    .grid {
+
+    .nav-tab:hover {
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.03);
+    }
+
+    .nav-tab.active {
+      color: var(--cyan);
+      background: rgba(14, 165, 233, 0.1);
+      border-color: rgba(14, 165, 233, 0.25);
+    }
+
+    .nav-badge {
+      font-size: 0.6875rem;
+      padding: 0.125rem 0.5rem;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.1);
+      color: var(--text);
+    }
+
+    /* ── Tab Panes ── */
+    .tab-content {
+      display: none;
+    }
+    .tab-content.active {
+      display: block;
+      animation: fadeIn 0.25s ease-in-out;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ── Device Cards Grid ── */
+    .device-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-      gap: 1rem;
+      grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+      gap: 1.5rem;
+      margin-bottom: 1.5rem;
     }
-    .card {
-      background: var(--card);
+
+    .device-card {
+      background: var(--card-bg);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
       border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 1.25rem;
+      border-radius: var(--radius-xl);
+      padding: 1.5rem;
+      transition: var(--transition);
+      position: relative;
     }
-    .card-header {
+
+    .device-card:hover {
+      border-color: var(--border-hover);
+    }
+
+    .device-card-header {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 1rem;
+      margin-bottom: 1.25rem;
     }
-    .card-title { font-size: 1.125rem; font-weight: 600; }
-    .badge {
+
+    .device-title-wrap {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .device-avatar {
+      width: 44px;
+      height: 44px;
+      border-radius: var(--radius-md);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.35rem;
+    }
+
+    .device-name {
+      font-size: 1.125rem;
+      font-weight: 700;
+    }
+
+    .device-sub {
       font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
       padding: 0.25rem 0.625rem;
       border-radius: 999px;
-      font-weight: 500;
+      font-size: 0.75rem;
+      font-weight: 600;
     }
-    .badge-on { background: rgba(34,197,94,0.15); color: var(--green); }
-    .badge-off { background: rgba(239,68,68,0.15); color: var(--red); }
-    .badge-unknown { background: rgba(139,156,179,0.15); color: var(--muted); }
-    .stats {
+
+    .badge-on {
+      background: rgba(16, 185, 129, 0.15);
+      color: var(--green);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+    }
+
+    .badge-off {
+      background: rgba(244, 63, 94, 0.15);
+      color: var(--red);
+      border: 1px solid rgba(244, 63, 94, 0.3);
+    }
+
+    .badge-unknown {
+      background: rgba(148, 163, 184, 0.12);
+      color: var(--text-muted);
+      border: 1px solid var(--border);
+    }
+
+    /* Telemetry Telemetry Metering Rows */
+    .telemetry-grid {
       display: grid;
       grid-template-columns: repeat(3, 1fr);
       gap: 0.75rem;
-      margin: 1rem 0;
+      margin: 1.25rem 0;
     }
-    .stat {
-      background: var(--bg);
-      border-radius: 8px;
-      padding: 0.75rem;
+
+    .telemetry-tile {
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 0.875rem 0.75rem;
       text-align: center;
     }
-    .stat-value { font-size: 1.25rem; font-weight: 600; }
-    .stat-label { font-size: 0.75rem; color: var(--muted); margin-top: 0.25rem; }
-    .actions { display: flex; gap: 0.5rem; margin-top: 1rem; }
-    .btn-on { background: var(--green); color: white; flex: 1; }
-    .btn-off { background: var(--red); color: white; flex: 1; }
+
+    .telemetry-val {
+      font-size: 1.375rem;
+      font-weight: 700;
+      font-family: 'JetBrains Mono', monospace;
+      color: var(--text);
+    }
+
+    .telemetry-unit {
+      font-size: 0.6875rem;
+      color: var(--text-muted);
+      font-weight: 600;
+      text-transform: uppercase;
+      margin-top: 0.25rem;
+    }
+
+    /* Watchdog Alert Banner */
+    .watchdog-banner {
+      background: rgba(245, 158, 11, 0.08);
+      border: 1px solid rgba(245, 158, 11, 0.25);
+      border-radius: var(--radius-md);
+      padding: 0.75rem 1rem;
+      margin-bottom: 1.25rem;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-size: 0.8125rem;
+      color: #fcd34d;
+    }
+
+    .device-actions {
+      display: flex;
+      gap: 0.75rem;
+    }
+
+    .device-actions .btn {
+      flex: 1;
+      padding: 0.625rem;
+      font-size: 0.875rem;
+    }
+
+    /* ── Tables & Lists ── */
+    .table-container {
+      background: var(--card-bg);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+      margin-bottom: 1.5rem;
+    }
+
+    .table-header {
+      padding: 1rem 1.25rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+    }
+
+    .table-title {
+      font-size: 1rem;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .search-input {
+      background: rgba(15, 23, 42, 0.7);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 0.375rem 0.75rem;
+      color: var(--text);
+      font-size: 0.8125rem;
+      outline: none;
+      width: 220px;
+    }
+    .search-input:focus {
+      border-color: var(--cyan);
+    }
+
+    .responsive-table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 0.8125rem;
+    }
+
+    .responsive-table th {
+      background: rgba(15, 23, 42, 0.4);
+      color: var(--text-muted);
+      font-weight: 600;
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid var(--border);
+      text-transform: uppercase;
+      font-size: 0.6875rem;
+      letter-spacing: 0.05em;
+    }
+
+    .responsive-table td {
+      padding: 0.875rem 1rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      color: var(--text);
+      vertical-align: middle;
+    }
+
+    .responsive-table tr:last-child td {
+      border-bottom: none;
+    }
+
+    .responsive-table tr:hover td {
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .font-mono {
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* Tag Badges */
+    .tag {
+      display: inline-block;
+      padding: 0.2rem 0.5rem;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .tag-cyan { background: rgba(14, 165, 233, 0.15); color: #38bdf8; border: 1px solid rgba(14, 165, 233, 0.25); }
+    .tag-green { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.25); }
+    .tag-red { background: rgba(244, 63, 94, 0.15); color: #fb7185; border: 1px solid rgba(244, 63, 94, 0.25); }
+    .tag-amber { background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.25); }
+    .tag-purple { background: rgba(168, 85, 247, 0.15); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.25); }
+
+    /* ── Users Tab Layout ── */
+    .user-section-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 1.5rem;
+    }
+
+    /* ── System Health & Database Tab ── */
+    .db-health-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .health-metric-box {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 1rem;
+    }
+
+    .health-metric-label {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-bottom: 0.25rem;
+    }
+
+    .health-metric-value {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: var(--text);
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* ── Toast Notifications ── */
     .toast {
       position: fixed;
-      bottom: 1.5rem;
-      right: 1.5rem;
-      background: var(--card);
+      bottom: 2rem;
+      right: 2rem;
+      background: rgba(15, 23, 42, 0.95);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
       border: 1px solid var(--border);
-      padding: 0.75rem 1rem;
-      border-radius: 8px;
+      color: var(--text);
+      padding: 0.875rem 1.25rem;
+      border-radius: var(--radius-md);
       font-size: 0.875rem;
-      max-width: 360px;
-      opacity: 0;
-      visibility: hidden;
-      transform: translateY(0.75rem);
-      transition: opacity 0.3s ease, transform 0.3s ease, visibility 0.3s;
+      max-width: 380px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
       z-index: 100;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      opacity: 0;
+      transform: translateY(16px);
+      visibility: hidden;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
       cursor: pointer;
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
     }
+
     .toast.show {
       opacity: 1;
-      visibility: visible;
       transform: translateY(0);
+      visibility: visible;
     }
-    .toast.error { border-color: var(--red); }
-    .footer {
-      margin-top: 2rem;
-      text-align: center;
-      color: var(--muted);
+
+    .toast.error {
+      border-color: var(--red);
+      background: rgba(30, 15, 20, 0.95);
+    }
+    .toast.success {
+      border-color: var(--green);
+      background: rgba(15, 30, 20, 0.95);
+    }
+
+    /* ── Modal for Error Stack Trace ── */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(8px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem;
+      z-index: 200;
+      opacity: 0;
+      visibility: hidden;
+      transition: var(--transition);
+    }
+
+    .modal-overlay.show {
+      opacity: 1;
+      visibility: visible;
+    }
+
+    .modal-box {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      max-width: 720px;
+      width: 100%;
+      max-height: 85vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+    }
+
+    .modal-header {
+      padding: 1rem 1.25rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .modal-body {
+      padding: 1.25rem;
+      overflow-y: auto;
+      font-size: 0.8125rem;
+      color: var(--text-muted);
+    }
+
+    pre.trace-box {
+      background: #05080e;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 1rem;
+      color: #f43f5e;
+      font-family: 'JetBrains Mono', monospace;
       font-size: 0.75rem;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      line-height: 1.6;
+    }
+
+    /* ── Footer ── */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 1.25rem 2rem;
+      text-align: center;
+      color: var(--text-dim);
+      font-size: 0.75rem;
+      background: rgba(15, 23, 42, 0.4);
+    }
+
+    /* ── Loading Spinner & Animations ── */
+    .spin {
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin {
+      100% { transform: rotate(360deg); }
+    }
+
+    @media (max-width: 768px) {
+      header, main, footer {
+        padding-left: 1rem;
+        padding-right: 1rem;
+      }
+      .telemetry-grid {
+        grid-template-columns: 1fr;
+      }
+      .header-actions {
+        width: 100%;
+        justify-content: space-between;
+      }
+      .api-key-box {
+        flex: 1;
+      }
+      .api-key-input {
+        width: 100%;
+      }
     }
   </style>
 </head>
 <body>
+
+  <!-- ── Top Header ── -->
   <header>
-    <div>
-      <h1>🏠 Smart Home Dashboard</h1>
-      <p class="subtitle">Kontrol lokal via REST API — satu backend dengan bot Telegram</p>
-    </div>
-    <div class="auth-bar">
-      <input type="password" id="apiKey" placeholder="API Key (DASHBOARD_API_KEY)">
-      <button class="btn-save" onclick="saveKey()">Simpan</button>
-      <button class="btn-refresh" onclick="refreshAll()">↻ Refresh</button>
+    <div class="header-content">
+      <div class="brand">
+        <div class="brand-icon">⚡</div>
+        <div>
+          <div class="brand-title">Tuya IoT Telemetry Center</div>
+          <div class="brand-subtitle">
+            <span class="live-pulse"></span>
+            <span>Local REST & MySQL Database Hub</span>
+            <span>·</span>
+            <span id="liveClock" class="font-mono">--:--:--</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="header-actions">
+        <div class="api-key-box" title="API Key untuk otentikasi REST API lokal">
+          <span style="font-size: 0.85rem; padding-left: 0.25rem;">🔑</span>
+          <input type="password" id="apiKey" class="api-key-input" placeholder="DASHBOARD_API_KEY">
+          <button class="btn btn-primary btn-sm" onclick="saveKey()">Simpan</button>
+        </div>
+        <button class="btn btn-secondary btn-sm" id="btnRefresh" onclick="refreshActiveTab()">
+          <span id="refreshIcon">↻</span> Segarkan
+        </button>
+      </div>
     </div>
   </header>
 
-  <div class="grid">
-    <div class="card" id="card-air">
-      <div class="card-header">
-        <span class="card-title">💧 Air</span>
-        <span class="badge badge-unknown" id="air-badge">—</span>
+  <!-- ── Main Content Area ── -->
+  <main>
+
+    <!-- ── Quick Overview Stat Cards ── -->
+    <section class="stat-row">
+      <div class="stat-card" style="border-left: 4px solid var(--cyan);">
+        <div class="stat-icon-wrapper" style="background: rgba(14, 165, 233, 0.15); color: var(--cyan);">💧</div>
+        <div class="stat-info">
+          <div class="stat-label">Pompa Air (Daya)</div>
+          <div class="stat-number" id="quickAirPower">0.0 W</div>
+          <div class="stat-desc" id="quickAirSub">Status: <span id="quickAirState">Checking...</span></div>
+        </div>
       </div>
-      <div class="stats">
-        <div class="stat"><div class="stat-value" id="air-power">—</div><div class="stat-label">Watt</div></div>
-        <div class="stat"><div class="stat-value" id="air-current">—</div><div class="stat-label">Ampere</div></div>
-        <div class="stat"><div class="stat-value" id="air-voltage">—</div><div class="stat-label">Volt</div></div>
+
+      <div class="stat-card" style="border-left: 4px solid var(--amber);">
+        <div class="stat-icon-wrapper" style="background: rgba(245, 158, 11, 0.15); color: var(--amber);">💡</div>
+        <div class="stat-info">
+          <div class="stat-label">Lampu Utama</div>
+          <div class="stat-number" id="quickLampuState">--</div>
+          <div class="stat-desc">Smart Bulb BARDI RGBWW</div>
+        </div>
       </div>
-      <div class="actions">
-        <button class="btn-on" onclick="control('air','on')">Nyalakan</button>
-        <button class="btn-off" onclick="control('air','off')">Matikan</button>
+
+      <div class="stat-card" style="border-left: 4px solid var(--green);">
+        <div class="stat-icon-wrapper" style="background: rgba(16, 185, 129, 0.15); color: var(--green);">🗄️</div>
+        <div class="stat-info">
+          <div class="stat-label">Database MySQL</div>
+          <div class="stat-number" id="quickDbLogs">0 Logs</div>
+          <div class="stat-desc" id="quickDbStatus">MySQL Pool: Checking...</div>
+        </div>
+      </div>
+
+      <div class="stat-card" style="border-left: 4px solid var(--purple);">
+        <div class="stat-icon-wrapper" style="background: rgba(168, 85, 247, 0.15); color: var(--purple);">👥</div>
+        <div class="stat-info">
+          <div class="stat-label">Pengguna Bot</div>
+          <div class="stat-number" id="quickUsersCount">0 User</div>
+          <div class="stat-desc" id="quickRecipientsCount">0 Penerima Notif Air</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Navigation Tabs ── -->
+    <nav class="nav-tabs">
+      <button class="nav-tab active" onclick="switchTab('devices', this)">
+        <span>⚡</span> Kontrol Perangkat
+      </button>
+      <button class="nav-tab" onclick="switchTab('power', this)">
+        <span>📈</span> Telemetri Daya
+        <span class="nav-badge" id="badgePowerCount">0</span>
+      </button>
+      <button class="nav-tab" onclick="switchTab('activities', this)">
+        <span>📜</span> Riwayat Aktivitas
+        <span class="nav-badge" id="badgeActivityCount">0</span>
+      </button>
+      <button class="nav-tab" onclick="switchTab('users', this)">
+        <span>👥</span> Manajemen User
+      </button>
+      <button class="nav-tab" onclick="switchTab('system', this)">
+        <span>🛡️</span> Sistem & Error
+        <span class="nav-badge" id="badgeErrorCount">0</span>
+      </button>
+    </nav>
+
+    <!-- ════════════════════════════════════════════════════════════════
+         TAB 1: KONTROL PERANGKAT & TELEMETRI REAL-TIME
+    ════════════════════════════════════════════════════════════════ -->
+    <div id="tab-devices" class="tab-content active">
+      <div class="device-grid">
+
+        <!-- Card Air -->
+        <div class="device-card" id="card-air">
+          <div class="device-card-header">
+            <div class="device-title-wrap">
+              <div class="device-avatar" style="background: rgba(14, 165, 233, 0.15); color: var(--cyan);">💧</div>
+              <div>
+                <div class="device-name">Smart Plug Air</div>
+                <div class="device-sub">Pompa Air Otomatis</div>
+              </div>
+            </div>
+            <span class="badge badge-unknown" id="air-badge">Checking...</span>
+          </div>
+
+          <div class="watchdog-banner" id="air-watchdog-banner">
+            <span style="font-size: 1.1rem;">🛡️</span>
+            <div>
+              <strong>Auto-off Watchdog Aktif:</strong> Pengecekan otomatis per 3 menit. Jika daya &lt; 200W (idle/bocor), pompa akan dimatikan otomatis.
+            </div>
+          </div>
+
+          <div class="telemetry-grid">
+            <div class="telemetry-tile">
+              <div class="telemetry-val" id="air-power">--</div>
+              <div class="telemetry-unit">Watt (Daya)</div>
+            </div>
+            <div class="telemetry-tile">
+              <div class="telemetry-val" id="air-current">--</div>
+              <div class="telemetry-unit">Ampere (Arus)</div>
+            </div>
+            <div class="telemetry-tile">
+              <div class="telemetry-val" id="air-voltage">--</div>
+              <div class="telemetry-unit">Volt (Tegangan)</div>
+            </div>
+          </div>
+
+          <div class="device-actions">
+            <button class="btn btn-success" id="btn-air-on" onclick="control('air', 'on')">
+              <span>🟢</span> Nyalakan Air
+            </button>
+            <button class="btn btn-danger" id="btn-air-off" onclick="control('air', 'off')">
+              <span>🔴</span> Matikan Air
+            </button>
+          </div>
+        </div>
+
+        <!-- Card Lampu -->
+        <div class="device-card" id="card-lampu">
+          <div class="device-card-header">
+            <div class="device-title-wrap">
+              <div class="device-avatar" style="background: rgba(245, 158, 11, 0.15); color: var(--amber);">💡</div>
+              <div>
+                <div class="device-name">Smart Bulb Lampu</div>
+                <div class="device-sub">BARDI RGBWW Lamp</div>
+              </div>
+            </div>
+            <span class="badge badge-unknown" id="lampu-badge">Checking...</span>
+          </div>
+
+          <div style="background: rgba(15, 23, 42, 0.5); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1.75rem; text-align: center; margin: 1.25rem 0;">
+            <div style="font-size: 2.5rem; margin-bottom: 0.5rem;" id="lampu-icon">💡</div>
+            <div style="font-weight: 600; font-size: 1rem;" id="lampu-status-text">Status Lampu: --</div>
+            <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">Kontrol lokal langsung via protokol Tuya 3.3</div>
+          </div>
+
+          <div class="device-actions">
+            <button class="btn btn-success" id="btn-lampu-on" onclick="control('lampu', 'on')">
+              <span>🟢</span> Nyalakan Lampu
+            </button>
+            <button class="btn btn-danger" id="btn-lampu-off" onclick="control('lampu', 'off')">
+              <span>🌑</span> Matikan Lampu
+            </button>
+          </div>
+        </div>
+
       </div>
     </div>
 
-    <div class="card" id="card-lampu">
-      <div class="card-header">
-        <span class="card-title">💡 Lampu</span>
-        <span class="badge badge-unknown" id="lampu-badge">—</span>
+    <!-- ════════════════════════════════════════════════════════════════
+         TAB 2: TELEMETRI DAYA (device_power_logs)
+    ════════════════════════════════════════════════════════════════ -->
+    <div id="tab-power" class="tab-content">
+      <div class="table-container">
+        <div class="table-header">
+          <div class="table-title">
+            <span>📈</span> Riwayat Telemetri Daya Pompa Air (MySQL: <code>device_power_logs</code>)
+          </div>
+          <div style="display: flex; gap: 0.5rem;">
+            <input type="text" class="search-input" id="searchPower" placeholder="Cari sumber/nilai..." onkeyup="filterPowerTable()">
+            <button class="btn btn-secondary btn-sm" onclick="loadPowerLogs()">↻ Refresh</button>
+          </div>
+        </div>
+
+        <div style="overflow-x: auto;">
+          <table class="responsive-table" id="tablePower">
+            <thead>
+              <tr>
+                <th>Waktu</th>
+                <th>Perangkat</th>
+                <th>Daya (Watt)</th>
+                <th>Arus (A)</th>
+                <th>Voltase (V)</th>
+                <th>Saklar</th>
+                <th>Sumber Log</th>
+              </tr>
+            </thead>
+            <tbody id="powerLogsBody">
+              <tr><td colspan="7" style="text-align: center; color: var(--text-dim); padding: 2rem;">Memuat data telemetri daya...</td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
-      <p style="color:var(--muted);font-size:0.875rem;margin:1rem 0;">Smart bulb BARDI RGBWW</p>
-      <div class="actions">
-        <button class="btn-on" onclick="control('lampu','on')">Nyalakan</button>
-        <button class="btn-off" onclick="control('lampu','off')">Matikan</button>
+    </div>
+
+    <!-- ════════════════════════════════════════════════════════════════
+         TAB 3: RIWAYAT AKTIVITAS (device_activity_logs)
+    ════════════════════════════════════════════════════════════════ -->
+    <div id="tab-activities" class="tab-content">
+      <div class="table-container">
+        <div class="table-header">
+          <div class="table-title">
+            <span>📜</span> Log Aktivitas Kontrol Perangkat (MySQL: <code>device_activity_logs</code>)
+          </div>
+          <div style="display: flex; gap: 0.5rem;">
+            <input type="text" class="search-input" id="searchActivity" placeholder="Cari user / aksi..." onkeyup="filterActivityTable()">
+            <button class="btn btn-secondary btn-sm" onclick="loadActivityLogs()">↻ Refresh</button>
+          </div>
+        </div>
+
+        <div style="overflow-x: auto;">
+          <table class="responsive-table" id="tableActivity">
+            <thead>
+              <tr>
+                <th>Waktu</th>
+                <th>User ID</th>
+                <th>Role</th>
+                <th>Perangkat</th>
+                <th>Aksi</th>
+                <th>Status</th>
+                <th>Keterangan</th>
+              </tr>
+            </thead>
+            <tbody id="activityLogsBody">
+              <tr><td colspan="7" style="text-align: center; color: var(--text-dim); padding: 2rem;">Memuat data aktivitas...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ════════════════════════════════════════════════════════════════
+         TAB 4: MANAJEMEN USER (bot_users & bot_air_recipients)
+    ════════════════════════════════════════════════════════════════ -->
+    <div id="tab-users" class="tab-content">
+      <div class="user-section-grid">
+
+        <!-- Superadmin (ENV) -->
+        <div class="table-container">
+          <div class="table-header">
+            <div class="table-title">
+              <span>👑</span> Superadmin (ENV)
+            </div>
+            <span class="tag tag-purple">Static Auth</span>
+          </div>
+          <div style="padding: 1rem;">
+            <p style="font-size: 0.8125rem; color: var(--text-muted); margin-bottom: 0.75rem;">
+              Superadmin memiliki hak mutlak atas semua perintah bot, manajemen user, dan housekeeping database.
+            </p>
+            <div id="superadminList" style="display: flex; flex-direction: column; gap: 0.5rem;">
+              <div style="color: var(--text-dim); font-size: 0.8125rem;">Memuat data superadmin...</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- User & Admin (MySQL Database) -->
+        <div class="table-container" style="grid-column: span 2;">
+          <div class="table-header">
+            <div class="table-title">
+              <span>💾</span> Pengguna Terdaftar (MySQL: <code>bot_users</code>)
+            </div>
+            <button class="btn btn-secondary btn-sm" onclick="loadUsers()">↻ Refresh</button>
+          </div>
+          <div style="overflow-x: auto;">
+            <table class="responsive-table" id="tableUsers">
+              <thead>
+                <tr>
+                  <th>Telegram ID</th>
+                  <th>Role Akses</th>
+                  <th>Ditambahkan Oleh</th>
+                  <th>Terdaftar Sejak</th>
+                </tr>
+              </thead>
+              <tbody id="usersListBody">
+                <tr><td colspan="4" style="text-align: center; color: var(--text-dim); padding: 2rem;">Memuat daftar pengguna...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Penerima Notifikasi Air -->
+      <div class="table-container" style="margin-top: 1.5rem;">
+        <div class="table-header">
+          <div class="table-title">
+            <span>🔔</span> Penerima Notifikasi Otomatis Air (MySQL: <code>bot_air_recipients</code>)
+          </div>
+        </div>
+        <div style="padding: 1.25rem;">
+          <p style="font-size: 0.8125rem; color: var(--text-muted); margin-bottom: 0.75rem;">
+            Admin yang terdaftar di bawah ini akan otomatis menerima notifikasi setiap kali role <strong>User</strong> menyalakan atau mematikan pompa air, serta saat pompa air dimatikan otomatis oleh watchdog.
+          </p>
+          <div id="airRecipientsList" style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+            <div style="color: var(--text-dim); font-size: 0.8125rem;">Memuat daftar penerima notif...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ════════════════════════════════════════════════════════════════
+         TAB 5: KESEHATAN SISTEM & ERROR (app_error_logs & Housekeeping)
+    ════════════════════════════════════════════════════════════════ -->
+    <div id="tab-system" class="tab-content">
+      <div class="db-health-grid">
+        <div class="health-metric-box">
+          <div class="health-metric-label">Status Koneksi MySQL</div>
+          <div class="health-metric-value" id="dbConnStatus">Checking...</div>
+        </div>
+        <div class="health-metric-box">
+          <div class="health-metric-label">Database Target</div>
+          <div class="health-metric-value" id="dbTargetHost">--</div>
+        </div>
+        <div class="health-metric-box">
+          <div class="health-metric-label">Retensi Pembersihan Log</div>
+          <div class="health-metric-value" id="dbRetentionDays">-- Hari</div>
+        </div>
+        <div class="health-metric-box" style="display: flex; align-items: center; justify-content: space-between;">
+          <div>
+            <div class="health-metric-label">Housekeeping Database</div>
+            <div style="font-size: 0.75rem; color: var(--text-muted);">Hapus log &gt; retensi hari</div>
+          </div>
+          <button class="btn btn-secondary btn-sm" id="btnCleanup" onclick="triggerCleanup()">
+            🧹 Bersihkan Log
+          </button>
+        </div>
+      </div>
+
+      <!-- App Error Logs Table -->
+      <div class="table-container">
+        <div class="table-header">
+          <div class="table-title">
+            <span>🛡️</span> Log Error Aplikasi (MySQL: <code>app_error_logs</code>)
+          </div>
+          <button class="btn btn-secondary btn-sm" onclick="loadErrorLogs()">↻ Refresh</button>
+        </div>
+
+        <div style="overflow-x: auto;">
+          <table class="responsive-table" id="tableErrors">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Waktu</th>
+                <th>Level</th>
+                <th>Logger</th>
+                <th>Pesan Error</th>
+                <th>Lokasi File</th>
+                <th>Trace</th>
+              </tr>
+            </thead>
+            <tbody id="errorLogsBody">
+              <tr><td colspan="7" style="text-align: center; color: var(--text-dim); padding: 2rem;">Memuat log error...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- ── Footer ── -->
+  <footer>
+    Tuya IoT Telemetry Center &amp; Telegram Bot Hub · Auto-refresh berkala setiap 30 detik · Port default 8080
+  </footer>
+
+  <!-- ── Toast Notification ── -->
+  <div class="toast" id="toast" onclick="hideToast()">
+    <span id="toastIcon">ℹ️</span>
+    <span id="toastMsg">Pemberitahuan</span>
+  </div>
+
+  <!-- ── Modal Stack Trace Viewer ── -->
+  <div class="modal-overlay" id="traceModal" onclick="closeTraceModal(event)">
+    <div class="modal-box" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <strong id="traceModalTitle">Detail Exception Stack Trace</strong>
+        <button class="btn btn-secondary btn-sm" onclick="closeTraceModal()">✕ Tutup</button>
+      </div>
+      <div class="modal-body">
+        <pre class="trace-box" id="traceContent"></pre>
       </div>
     </div>
   </div>
 
-  <p class="footer">Auto-refresh setiap 30 detik · Port default 8080</p>
-  <div class="toast" id="toast" title="Klik untuk tutup"></div>
-
+  <!-- ════════════════════════════════════════════════════════════════
+       JAVASCRIPT LOGIC
+  ════════════════════════════════════════════════════════════════ -->
   <script>
     const KEY_STORAGE = 'tuyabot_api_key';
+    let currentTab = 'devices';
+    let powerLogsCache = [];
+    let activityLogsCache = [];
+
+    // Live Clock
+    function updateClock() {
+      const now = new Date();
+      document.getElementById('liveClock').textContent = now.toLocaleTimeString('id-ID', { hour12: false });
+    }
+    setInterval(updateClock, 1000);
+    updateClock();
 
     function getKey() {
-      return document.getElementById('apiKey').value || localStorage.getItem(KEY_STORAGE) || '';
+      return document.getElementById('apiKey').value.trim() || localStorage.getItem(KEY_STORAGE) || '';
     }
 
     function saveKey() {
-      const key = document.getElementById('apiKey').value.trim();
-      if (key) localStorage.setItem(KEY_STORAGE, key);
-      toast('API key disimpan');
-      refreshAll();
+      const val = document.getElementById('apiKey').value.trim();
+      if (val) {
+        localStorage.setItem(KEY_STORAGE, val);
+        toast('API Key berhasil disimpan!', 'success');
+        refreshActiveTab();
+      } else {
+        toast('API Key tidak boleh kosong', 'error');
+      }
     }
 
-    async function api(path, method = 'GET') {
-      const res = await fetch(path, {
+    // Generic API Caller
+    async function api(path, method = 'GET', body = null) {
+      const key = getKey();
+      const options = {
         method,
-        headers: { 'X-API-Key': getKey() },
-      });
+        headers: {
+          'X-API-Key': key,
+          'Content-Type': 'application/json'
+        }
+      };
+      if (body) {
+        options.body = JSON.stringify(body);
+      }
+      const res = await fetch(path, options);
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.detail || res.statusText);
+      if (!res.ok) {
+        throw new Error(data.detail || res.statusText || 'Terjadi kesalahan jaringan');
+      }
       return data;
     }
 
-    function setBadge(id, on, online = true) {
-      const el = document.getElementById(id);
-      if (!online) {
+    // Tab Switcher
+    function switchTab(tabId, el) {
+      currentTab = tabId;
+      document.querySelectorAll('.nav-tab').forEach(b => b.classList.remove('active'));
+      if (el) el.classList.add('active');
+
+      document.querySelectorAll('.tab-content').forEach(p => p.classList.remove('active'));
+      const activePane = document.getElementById('tab-' + tabId);
+      if (activePane) activePane.classList.add('active');
+
+      refreshActiveTab();
+    }
+
+    function refreshActiveTab() {
+      const btn = document.getElementById('refreshIcon');
+      btn.classList.add('spin');
+      setTimeout(() => btn.classList.remove('spin'), 800);
+
+      // Selalu refresh stats overview
+      loadStatsOverview();
+
+      if (currentTab === 'devices') {
+        refreshDevices();
+      } else if (currentTab === 'power') {
+        loadPowerLogs();
+      } else if (currentTab === 'activities') {
+        loadActivityLogs();
+      } else if (currentTab === 'users') {
+        loadUsers();
+      } else if (currentTab === 'system') {
+        loadErrorLogs();
+      }
+    }
+
+    // ── Load Stats Overview ──
+    async function loadStatsOverview() {
+      if (!getKey()) return;
+      try {
+        const stats = await api('/api/db/stats');
+        document.getElementById('quickDbLogs').textContent = (stats.total_power_logs + stats.total_activity_logs + stats.total_error_logs).toLocaleString() + ' Logs';
+        document.getElementById('quickDbStatus').textContent = stats.connected ? `MySQL: Terhubung (${stats.database})` : 'MySQL: Putus';
+        document.getElementById('quickUsersCount').textContent = stats.total_runtime_users + ' User DB';
+        document.getElementById('quickRecipientsCount').textContent = stats.total_air_recipients + ' Penerima Notif Air';
+
+        document.getElementById('dbConnStatus').textContent = stats.connected ? '🟢 ONLINE' : '🔴 OFFLINE';
+        document.getElementById('dbTargetHost').textContent = `${stats.host} / ${stats.database}`;
+        document.getElementById('dbRetentionDays').textContent = stats.retention_days + ' Hari';
+      } catch (e) {
+        console.warn('Gagal memuat db stats overview:', e);
+      }
+    }
+
+    // ── Tab 1: Devices ──
+    async function refreshDevices() {
+      if (!getKey()) return;
+      // Refresh Air
+      try {
+        const airStatus = await api('/api/devices/air/status');
+        setDeviceBadge('air-badge', airStatus.switch_on, airStatus.online);
+        document.getElementById('quickAirState').textContent = airStatus.online ? (airStatus.switch_on ? '🟢 Menyala' : '🔴 Mati') : 'Offline';
+
+        const power = await api('/api/devices/air/power');
+        if (power.success) {
+          document.getElementById('air-power').textContent = Number(power.power_w).toFixed(1);
+          document.getElementById('air-current').textContent = Number(power.current_a).toFixed(2);
+          document.getElementById('air-voltage').textContent = Number(power.voltage_v).toFixed(1);
+          document.getElementById('quickAirPower').textContent = Number(power.power_w).toFixed(1) + ' W';
+        }
+      } catch (e) {
+        setDeviceBadge('air-badge', false, false);
+      }
+
+      // Refresh Lampu
+      try {
+        const lampuStatus = await api('/api/devices/lampu/status');
+        setDeviceBadge('lampu-badge', lampuStatus.switch_on, lampuStatus.online);
+        const isOn = Boolean(lampuStatus.switch_on);
+        document.getElementById('quickLampuState').textContent = lampuStatus.online ? (isOn ? '🟢 NYALA' : '🔴 MATI') : 'Offline';
+        document.getElementById('lampu-status-text').textContent = lampuStatus.online ? (isOn ? 'Status: 🟢 Menyala Terang' : 'Status: 🔴 Padam') : 'Status: Offline';
+        document.getElementById('lampu-icon').style.opacity = isOn ? '1' : '0.35';
+      } catch (e) {
+        setDeviceBadge('lampu-badge', false, false);
+      }
+    }
+
+    function setDeviceBadge(badgeId, isOn, isOnline) {
+      const el = document.getElementById(badgeId);
+      if (!el) return;
+      if (!isOnline) {
         el.textContent = 'Offline';
         el.className = 'badge badge-unknown';
         return;
       }
-      el.textContent = on ? 'NYALA' : 'MATI';
-      el.className = 'badge ' + (on ? 'badge-on' : 'badge-off');
+      el.textContent = isOn ? '🟢 NYALA' : '🔴 MATI';
+      el.className = 'badge ' + (isOn ? 'badge-on' : 'badge-off');
     }
 
-    async function refreshAir() {
-      try {
-        const status = await api('/api/devices/air/status');
-        setBadge('air-badge', status.switch_on, status.online);
-        const power = await api('/api/devices/air/power');
-        if (power.success) {
-          document.getElementById('air-power').textContent = power.power_w;
-          document.getElementById('air-current').textContent = power.current_a;
-          document.getElementById('air-voltage').textContent = power.voltage_v;
-        }
-      } catch (e) {
-        setBadge('air-badge', false, false);
-        console.error(e);
-      }
-    }
-
-    async function refreshLampu() {
-      try {
-        const status = await api('/api/devices/lampu/status');
-        setBadge('lampu-badge', status.switch_on, status.online);
-      } catch (e) {
-        setBadge('lampu-badge', false, false);
-        console.error(e);
-      }
-    }
-
-    async function refreshAll(options = {}) {
-      const quiet = options.quiet ?? false;
+    async function control(device, action) {
       if (!getKey()) {
-        if (!quiet) toast('Masukkan API key dulu', true);
+        toast('Masukkan API Key terlebih dahulu', 'error');
         return;
       }
-      await Promise.all([refreshAir(), refreshLampu()]);
-    }
-
-    async function control(name, action) {
-      if (!getKey()) {
-        toast('Masukkan API key dulu', true);
-        return;
-      }
-      const btns = document.querySelectorAll(`#card-${name} button`);
+      const btns = document.querySelectorAll(`#card-${device} button`);
       btns.forEach(b => b.disabled = true);
       try {
-        const data = await api(`/api/devices/${name}/${action}`, 'POST');
-        toast(data.message);
-        await refreshAll();
+        const res = await api(`/api/devices/${device}/${action}`, 'POST');
+        toast(res.message || `Perangkat ${device} berhasil diubah!`, 'success');
+        await refreshDevices();
+        await loadStatsOverview();
       } catch (e) {
-        toast(e.message, true);
+        toast(e.message || 'Gagal mengubah status perangkat', 'error');
       } finally {
         btns.forEach(b => b.disabled = false);
       }
     }
 
-    let toastHideTimer = null;
-    let toastCleanupTimer = null;
+    // ── Tab 2: Power Logs ──
+    async function loadPowerLogs() {
+      if (!getKey()) return;
+      const tbody = document.getElementById('powerLogsBody');
+      try {
+        const data = await api('/api/db/power-logs?limit=50');
+        powerLogsCache = data || [];
+        document.getElementById('badgePowerCount').textContent = powerLogsCache.length;
+        renderPowerTable(powerLogsCache);
+      } catch (e) {
+        tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; color:var(--red);">Gagal memuat log daya: ${e.message}</td></tr>`;
+      }
+    }
+
+    function renderPowerTable(logs) {
+      const tbody = document.getElementById('powerLogsBody');
+      if (!logs.length) {
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--text-dim); padding: 2rem;">Belum ada riwayat konsumsi daya di database.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = logs.map(r => {
+        const switchBadge = r.switch_state 
+          ? '<span class="tag tag-green">ON</span>' 
+          : (r.switch_state === false ? '<span class="tag tag-red">OFF</span>' : '<span class="tag">--</span>');
+        
+        const sourceTag = r.source === 'auto_off' 
+          ? '<span class="tag tag-amber">auto_off</span>' 
+          : (r.source === 'action_switch' ? '<span class="tag tag-cyan">action</span>' : '<span class="tag">periodic</span>');
+
+        const wattColor = r.power_w >= 200 ? 'color: #38bdf8; font-weight:700;' : 'color: var(--text);';
+
+        return `
+          <tr>
+            <td class="font-mono" style="color:var(--text-muted);">${r.created_at}</td>
+            <td><strong>💧 ${r.device_name}</strong></td>
+            <td class="font-mono" style="${wattColor}">${r.power_w.toFixed(1)} W</td>
+            <td class="font-mono">${r.current_a.toFixed(2)} A</td>
+            <td class="font-mono">${r.voltage_v.toFixed(1)} V</td>
+            <td>${switchBadge}</td>
+            <td>${sourceTag}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function filterPowerTable() {
+      const q = document.getElementById('searchPower').value.toLowerCase();
+      const filtered = powerLogsCache.filter(r => 
+        r.device_name.toLowerCase().includes(q) ||
+        r.source.toLowerCase().includes(q) ||
+        r.created_at.toLowerCase().includes(q) ||
+        String(r.power_w).includes(q)
+      );
+      renderPowerTable(filtered);
+    }
+
+    // ── Tab 3: Activity Logs ──
+    async function loadActivityLogs() {
+      if (!getKey()) return;
+      const tbody = document.getElementById('activityLogsBody');
+      try {
+        const data = await api('/api/db/activities?limit=50');
+        activityLogsCache = data || [];
+        document.getElementById('badgeActivityCount').textContent = activityLogsCache.length;
+        renderActivityTable(activityLogsCache);
+      } catch (e) {
+        tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; color:var(--red);">Gagal memuat riwayat aktivitas: ${e.message}</td></tr>`;
+      }
+    }
+
+    function renderActivityTable(logs) {
+      const tbody = document.getElementById('activityLogsBody');
+      if (!logs.length) {
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--text-dim); padding: 2rem;">Belum ada catatan aktivitas kontrol di database.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = logs.map(r => {
+        let roleIcon = '👤';
+        let roleTagClass = 'tag';
+        if (r.user_role === 'Superadmin') { roleIcon = '👑'; roleTagClass = 'tag tag-purple'; }
+        else if (r.user_role === 'Admin') { roleIcon = '💡'; roleTagClass = 'tag tag-cyan'; }
+        else if (r.user_role === 'User') { roleIcon = '💧'; roleTagClass = 'tag tag-green'; }
+        else if (r.user_role === 'api') { roleIcon = '🤖'; roleTagClass = 'tag tag-amber'; }
+
+        const actionTag = r.action === 'turn_on' 
+          ? '<span class="tag tag-green">TURN ON</span>' 
+          : '<span class="tag tag-red">TURN OFF</span>';
+
+        const statusTag = r.status === 'success'
+          ? '<span class="badge badge-on">Berhasil</span>'
+          : (r.status === 'auto_off' ? '<span class="badge" style="background:rgba(245,158,11,0.2);color:#fbbf24;border:1px solid rgba(245,158,11,0.4)">Auto-Off</span>' : '<span class="badge badge-off">Gagal</span>');
+
+        return `
+          <tr>
+            <td class="font-mono" style="color:var(--text-muted);">${r.created_at}</td>
+            <td class="font-mono">${r.user_id ? r.user_id : '<span style="color:var(--text-dim);">API / Sys</span>'}</td>
+            <td><span class="${roleTagClass}">${roleIcon} ${r.user_role}</span></td>
+            <td>${r.device_name === 'air' ? '💧 Air' : '💡 Lampu'}</td>
+            <td>${actionTag}</td>
+            <td>${statusTag}</td>
+            <td style="color:var(--text-muted); font-size:0.75rem;">${r.message || '-'}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function filterActivityTable() {
+      const q = document.getElementById('searchActivity').value.toLowerCase();
+      const filtered = activityLogsCache.filter(r => 
+        String(r.user_id).includes(q) ||
+        r.user_role.toLowerCase().includes(q) ||
+        r.action.toLowerCase().includes(q) ||
+        r.device_name.toLowerCase().includes(q) ||
+        (r.message && r.message.toLowerCase().includes(q))
+      );
+      renderActivityTable(filtered);
+    }
+
+    // ── Tab 4: Users ──
+    async function loadUsers() {
+      if (!getKey()) return;
+      try {
+        const data = await api('/api/db/users');
+        
+        // Superadmin list
+        const saWrap = document.getElementById('superadminList');
+        const envUsers = data.env || {};
+        const saIds = Object.keys(envUsers);
+        if (!saIds.length) {
+          saWrap.innerHTML = '<div style="color:var(--text-dim); font-size:0.8125rem;">(Tidak ada Superadmin di ENV)</div>';
+        } else {
+          saWrap.innerHTML = saIds.map(id => `
+            <div style="display:flex; align-items:center; justify-content:space-between; background:rgba(15,23,42,0.6); padding:0.625rem 0.875rem; border-radius:var(--radius-md); border:1px solid var(--border);">
+              <span class="font-mono" style="font-weight:600;">🆔 ${id}</span>
+              <span class="tag tag-purple">👑 Superadmin</span>
+            </div>
+          `).join('');
+        }
+
+        // Runtime Users
+        const tbody = document.getElementById('usersListBody');
+        const runtime = data.runtime || [];
+        if (!runtime.length) {
+          tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:var(--text-dim); padding: 2rem;">Belum ada user runtime di database MySQL.</td></tr>';
+        } else {
+          tbody.innerHTML = runtime.map(u => {
+            const roleBadge = u.role === 2 
+              ? '<span class="tag tag-cyan">💡 Admin</span>' 
+              : '<span class="tag tag-green">💧 User</span>';
+            const addedBy = u.added_by_name && u.added_by_name !== '-' ? u.added_by_name : (u.added_by ? `ID: ${u.added_by}` : '-');
+            return `
+              <tr>
+                <td class="font-mono" style="font-weight:600;">${u.user_id}</td>
+                <td>${roleBadge}</td>
+                <td style="color:var(--text-muted); font-size:0.75rem;">${addedBy}</td>
+                <td class="font-mono" style="color:var(--text-muted);">${u.created_at || '-'}</td>
+              </tr>
+            `;
+          }).join('');
+        }
+
+        // Air Recipients
+        const recWrap = document.getElementById('airRecipientsList');
+        const recs = data.air_recipients || [];
+        if (!recs.length) {
+          recWrap.innerHTML = '<div style="color:var(--text-dim); font-size:0.8125rem;">(Belum ada penerima notifikasi air yang terdaftar)</div>';
+        } else {
+          recWrap.innerHTML = recs.map(id => `
+            <span class="tag tag-cyan" style="padding:0.4rem 0.75rem; font-size:0.8125rem;">
+              🔔 ID: ${id}
+            </span>
+          `).join('');
+        }
+
+      } catch (e) {
+        toast('Gagal memuat daftar pengguna: ' + e.message, 'error');
+      }
+    }
+
+    // ── Tab 5: System & Error Logs ──
+    async function loadErrorLogs() {
+      if (!getKey()) return;
+      const tbody = document.getElementById('errorLogsBody');
+      try {
+        const errors = await api('/api/db/errors?limit=50');
+        document.getElementById('badgeErrorCount').textContent = (errors || []).length;
+        if (!errors || !errors.length) {
+          tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--green); padding: 2rem;">✅ Sistem sehat! Tidak ada catatan error di database.</td></tr>';
+          return;
+        }
+
+        window._errorCache = errors;
+
+        tbody.innerHTML = errors.map((r, idx) => {
+          const levelTag = r.level === 'CRITICAL' || r.level === 'ERROR'
+            ? '<span class="tag tag-red">' + r.level + '</span>'
+            : '<span class="tag tag-amber">' + r.level + '</span>';
+
+          const traceBtn = r.exception_trace 
+            ? `<button class="btn btn-secondary btn-sm" onclick="showTrace(${idx})">Lihat Trace</button>`
+            : '<span style="color:var(--text-dim);">-</span>';
+
+          return `
+            <tr>
+              <td class="font-mono" style="color:var(--text-dim);">${r.id}</td>
+              <td class="font-mono" style="color:var(--text-muted);">${r.created_at}</td>
+              <td>${levelTag}</td>
+              <td style="color:var(--text-muted);">${r.logger_name}</td>
+              <td style="color:var(--text); max-width: 320px; word-break:break-word;">${r.message}</td>
+              <td class="font-mono" style="color:var(--text-dim); font-size:0.75rem;">${r.file_name || '-'}:${r.line_number || '-'}</td>
+              <td>${traceBtn}</td>
+            </tr>
+          `;
+        }).join('');
+      } catch (e) {
+        tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; color:var(--red);">Gagal memuat log error: ${e.message}</td></tr>`;
+      }
+    }
+
+    function showTrace(idx) {
+      if (!window._errorCache || !window._errorCache[idx]) return;
+      const err = window._errorCache[idx];
+      document.getElementById('traceModalTitle').textContent = `Trace Error #${err.id}: ${err.logger_name}`;
+      document.getElementById('traceContent').textContent = err.exception_trace || '(Trace kosong)';
+      document.getElementById('traceModal').classList.add('show');
+    }
+
+    function closeTraceModal(event) {
+      if (event && event.target !== event.currentTarget && event.type === 'click') return;
+      document.getElementById('traceModal').classList.remove('show');
+    }
+
+    async function triggerCleanup() {
+      if (!confirm('Yakin ingin menjalankan pembersihan (housekeeping) log yang lebih tua dari retensi hari?')) {
+        return;
+      }
+      const btn = document.getElementById('btnCleanup');
+      btn.disabled = true;
+      try {
+        const res = await api('/api/db/cleanup', 'POST');
+        toast(res.message || 'Pembersihan log selesai!', 'success');
+        await loadStatsOverview();
+        await loadPowerLogs();
+        await loadActivityLogs();
+        await loadErrorLogs();
+      } catch (e) {
+        toast('Gagal membersihkan database: ' + e.message, 'error');
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    // ── Toast System ──
+    let toastTimer = null;
+    function toast(msg, type = 'info') {
+      const el = document.getElementById('toast');
+      const icon = document.getElementById('toastIcon');
+      const text = document.getElementById('toastMsg');
+
+      clearTimeout(toastTimer);
+      el.className = 'toast show ' + (type === 'error' ? 'error' : (type === 'success' ? 'success' : ''));
+      icon.textContent = type === 'error' ? '⚠️' : (type === 'success' ? '✅' : 'ℹ️');
+      text.textContent = msg;
+
+      toastTimer = setTimeout(hideToast, 3500);
+    }
 
     function hideToast() {
       const el = document.getElementById('toast');
       el.classList.remove('show');
-      clearTimeout(toastHideTimer);
-      clearTimeout(toastCleanupTimer);
-      toastCleanupTimer = setTimeout(() => {
-        el.classList.remove('error');
-        el.textContent = '';
-      }, 320);
     }
 
-    function toast(msg, isError = false) {
-      const el = document.getElementById('toast');
-      clearTimeout(toastHideTimer);
-      clearTimeout(toastCleanupTimer);
+    // ── Initialization ──
+    window.addEventListener('DOMContentLoaded', () => {
+      const saved = localStorage.getItem(KEY_STORAGE) || '';
+      if (saved) {
+        document.getElementById('apiKey').value = saved;
+      }
+      refreshActiveTab();
 
-      el.textContent = msg;
-      el.classList.toggle('error', isError);
-
-      // Reset animasi supaya toast baru selalu muncul/hilang dengan benar
-      el.classList.remove('show');
-      requestAnimationFrame(() => {
-        el.classList.add('show');
-      });
-
-      toastHideTimer = setTimeout(hideToast, 3000);
-    }
-
-    document.getElementById('toast').addEventListener('click', hideToast);
-
-    document.getElementById('apiKey').value = localStorage.getItem(KEY_STORAGE) || '';
-    refreshAll({ quiet: true });
-    setInterval(() => refreshAll({ quiet: true }), 30000);
+      // Auto-refresh every 30 seconds
+      setInterval(() => {
+        refreshActiveTab();
+      }, 30000);
+    });
   </script>
 </body>
 </html>
