@@ -495,39 +495,38 @@ async def devices_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 @rate_limit
 @superadmin_only
-async def users_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    data = auth.list_users()
+def _format_users_list() -> str:
+    """Format tampilan daftar user untuk Superadmin."""
+    details = auth.list_users_detailed()
     lines = ["👥 *Daftar User*\n"]
 
     lines.append("*👑 Superadmin (ENV):*")
-    for uid in sorted(data["env"].keys()):
-        if data["env"][uid] == SUPERADMIN:
-            lines.append(f"  • `{uid}`")
-    if not any(r == SUPERADMIN for r in data["env"].values()):
+    for uid in sorted(details["env"].keys()):
+        lines.append(f"  • `{uid}`")
+    if not details["env"]:
         lines.append("  _(kosong)_")
 
-    lines.append("\n*💡 Admin (ENV):*")
-    for uid in sorted(data["env"].keys()):
-        if data["env"][uid] == ADMIN:
-            lines.append(f"  • `{uid}`")
-    if not any(r == ADMIN for r in data["env"].values()):
-        lines.append("  _(kosong)_")
-
-    lines.append("\n*💧 User (ENV):*")
-    for uid in sorted(data["env"].keys()):
-        if data["env"][uid] == USER:
-            lines.append(f"  • `{uid}`")
-    if not any(r == USER for r in data["env"].values()):
-        lines.append("  _(kosong)_")
-
-    lines.append("\n*➕ Runtime (database):*")
-    if data["runtime"]:
-        for uid, role in sorted(data["runtime"].items()):
-            lines.append(f"  • `{uid}` → {ROLE_NAMES.get(role, '?')}")
+    lines.append("\n*💾 User & Admin (Database):*")
+    if details["runtime"]:
+        for item in details["runtime"]:
+            uid = item["user_id"]
+            role = item["role"]
+            rname = ROLE_NAMES.get(role, "?")
+            icon = "💡" if role == ADMIN else "💧" if role == USER else "👤"
+            added_info = ""
+            if item.get("added_by_name") and item["added_by_name"] != "-":
+                added_info = f"\n    ↳ _Ditambahkan oleh: {item['added_by_name']}_"
+            lines.append(f"  • `{uid}` → {icon} *{rname}*{added_info}")
     else:
-        lines.append("  _(kosong)_")
+        lines.append("  _(kosong — belum ada user runtime)_")
 
-    await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+    return "\n".join(lines)
+
+
+@rate_limit
+@superadmin_only
+async def users_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(_format_users_list(), parse_mode="Markdown")
 
 
 @rate_limit
@@ -554,18 +553,25 @@ async def allowuser_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown"
         )
         return
-    if auth.set_role(target_id, role_input):
+
+    actor = update.effective_user
+    added_by = actor.id
+    added_by_name = f"{actor.full_name} (@{actor.username})" if actor.username else actor.full_name
+
+    if auth.set_role(target_id, role_input, added_by=added_by, added_by_name=added_by_name):
         rname = ROLE_NAMES[role_input]
         await update.message.reply_text(
-            f"✅ User `{target_id}` berhasil di-set sebagai *{rname}*.",
+            f"✅ User `{target_id}` berhasil di-set sebagai *{rname}*.\n"
+            f"👤 Ditambahkan oleh: *{added_by_name}*",
             parse_mode="Markdown"
         )
-        logger.info("Superadmin %s set user %s as %s", update.effective_user.id, target_id, rname)
+        logger.info("Superadmin %s (%s) set user %s as %s", actor.id, added_by_name, target_id, rname)
     else:
         await update.message.reply_text(
-            "❌ Gagal. User mungkin sudah di-set via ENV.",
+            "❌ Gagal. User mungkin Superadmin di ENV atau database MySQL sedang bermasalah.",
             parse_mode="Markdown"
         )
+
 
 
 @rate_limit
@@ -817,36 +823,8 @@ async def _callback_users(query, context, action: str, role: int):
         return
 
     if action == "list":
-        data = auth.list_users()
-        lines = ["👥 *Daftar User*\n"]
-        lines.append("*👑 Superadmin (ENV):*")
-        for uid in sorted(data["env"].keys()):
-            if data["env"][uid] == SUPERADMIN:
-                lines.append(f"  • `{uid}`")
-        if not any(r == SUPERADMIN for r in data["env"].values()):
-            lines.append("  _(kosong)_")
+        await query.message.reply_text(_format_users_list(), parse_mode="Markdown")
 
-        lines.append("\n*💡 Admin (ENV):*")
-        for uid in sorted(data["env"].keys()):
-            if data["env"][uid] == ADMIN:
-                lines.append(f"  • `{uid}`")
-        if not any(r == ADMIN for r in data["env"].values()):
-            lines.append("  _(kosong)_")
-
-        lines.append("\n*💧 User (ENV):*")
-        for uid in sorted(data["env"].keys()):
-            if data["env"][uid] == USER:
-                lines.append(f"  • `{uid}`")
-        if not any(r == USER for r in data["env"].values()):
-            lines.append("  _(kosong)_")
-
-        lines.append("\n*➕ Runtime (database):*")
-        if data["runtime"]:
-            for uid, role_val in sorted(data["runtime"].items()):
-                lines.append(f"  • `{uid}` → {ROLE_NAMES.get(role_val, '?')}")
-        else:
-            lines.append("  _(kosong)_")
-        await query.message.reply_text("\n".join(lines), parse_mode="Markdown")
 
     elif action == "add":
         await query.message.reply_text(
@@ -884,21 +862,21 @@ def _format_notify_list() -> str:
     else:
         lines.append("  _(belum ada)_")
 
-    lines.append("\n*💡 Admin terdaftar (ENV + runtime):*")
+    lines.append("\n*💡 Admin terdaftar (Database):*")
     admins = auth.list_all_admins()
     if admins:
         for row in admins:
             status = "✅ penerima" if row["is_recipient"] else "➕ belum ditambahkan"
-            src = "ENV" if row["source"] == "env" else "runtime"
-            lines.append(f"  • `{row['id']}` — 💡 Admin _({src}, {status})_")
+            lines.append(f"  • `{row['id']}` — 💡 Admin _({status})_")
     else:
-        lines.append("  _(belum ada admin — set `ADMIN_USERS` di .env atau tambah via bot)_")
+        lines.append("  _(belum ada admin terdaftar di database — tambah via menu Tambah User)_")
 
     lines.append(
-        "\n_Untuk menambah admin ENV ke penerima: klik **➕ Tambah Admin** "
+        "\n_Untuk mendaftarkan admin ke penerima: klik **➕ Tambah Admin** "
         "lalu kirim Telegram ID-nya._"
     )
     return "\n".join(lines)
+
 
 
 async def _callback_notify(query, context, action: str, role: int):
@@ -944,18 +922,25 @@ async def _callback_role_confirm(query, context, target_id: int, role_input: int
     if role_input not in (USER, ADMIN):
         await query.message.reply_text("❌ Role tidak valid.")
         return
-    if auth.set_role(target_id, role_input):
+
+    actor = query.from_user
+    added_by = actor.id
+    added_by_name = f"{actor.full_name} (@{actor.username})" if actor.username else actor.full_name
+
+    if auth.set_role(target_id, role_input, added_by=added_by, added_by_name=added_by_name):
         rname = ROLE_NAMES[role_input]
         await query.edit_message_text(
-            f"✅ User `{target_id}` berhasil di-set sebagai *{rname}*.",
+            f"✅ User `{target_id}` berhasil di-set sebagai *{rname}*.\n"
+            f"👤 Ditambahkan oleh: *{added_by_name}*",
             parse_mode="Markdown",
         )
-        logger.info("Superadmin %s set user %s as %s", query.from_user.id, target_id, rname)
+        logger.info("Superadmin %s (%s) set user %s as %s", actor.id, added_by_name, target_id, rname)
     else:
         await query.edit_message_text(
-            "❌ Gagal. User mungkin sudah di-set via ENV.",
+            "❌ Gagal. User mungkin Superadmin di ENV atau database MySQL sedang bermasalah.",
             parse_mode="Markdown",
         )
+
 
 
 # ═══════════════════════════════════════════════════════

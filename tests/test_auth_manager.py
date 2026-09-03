@@ -22,12 +22,13 @@ def test_auth_manager_set_and_remove_user():
          patch("database.remove_user", return_value=True) as mock_remove:
         
         # Non-env user can be set
-        assert auth_manager.auth.set_role(55555, auth_manager.USER) is True
-        mock_set.assert_called_with(55555, auth_manager.USER)
+        assert auth_manager.auth.set_role(55555, auth_manager.USER, added_by=999, added_by_name="Superadmin") is True
+        mock_set.assert_called_with(55555, auth_manager.USER, added_by=999, added_by_name="Superadmin")
 
         # Non-env user can be removed
         assert auth_manager.auth.remove_user(55555) is True
         mock_remove.assert_called_with(55555)
+
 
 def test_auth_manager_air_recipients():
     with patch("database.get_air_recipients", return_value={101}) as mock_get_recipients, \

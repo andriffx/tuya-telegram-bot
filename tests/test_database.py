@@ -20,15 +20,24 @@ def test_database_crud_operations():
         role = database.get_user_role(99999)
         assert role is None
 
-        # Test set_user_role
-        res = database.set_user_role(12345, 1)
+        # Test set_user_role with added_by
+        res = database.set_user_role(12345, 1, added_by=999, added_by_name="Superadmin")
         assert res is True
         mock_cursor.execute.assert_called()
+
+        # Test get_all_runtime_users_details
+        mock_cursor.fetchall.return_value = [(12345, 1, 999, "Superadmin", "2026-09-03 10:00:00", "2026-09-03 10:00:00")]
+        details = database.get_all_runtime_users_details()
+        assert len(details) == 1
+        assert details[0]["user_id"] == 12345
+        assert details[0]["added_by"] == 999
+        assert details[0]["added_by_name"] == "Superadmin"
 
         # Test remove_user
         mock_cursor.rowcount = 1
         res = database.remove_user(12345)
         assert res is True
+
 
         # Test get_air_recipients
         mock_cursor.fetchall.return_value = [(111,), (222,)]

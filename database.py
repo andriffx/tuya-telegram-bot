@@ -122,9 +122,12 @@ def init_db(migrate_json: bool = True) -> bool:
         CREATE TABLE IF NOT EXISTS bot_users (
             user_id BIGINT PRIMARY KEY,
             role TINYINT NOT NULL DEFAULT 0,
+            added_by BIGINT NULL,
+            added_by_name VARCHAR(255) NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
         );
+
         """,
         """
         CREATE TABLE IF NOT EXISTS bot_air_recipients (
@@ -165,10 +168,29 @@ def init_db(migrate_json: bool = True) -> bool:
         with get_db_connection() as (conn, cursor):
             for q in queries:
                 cursor.execute(q)
+
+            # Pastikan kolom added_by dan added_by_name ada pada tabel yang sudah terlanjur dibuat
+            try:
+                cursor.execute("SHOW COLUMNS FROM bot_users LIKE 'added_by'")
+                if not cursor.fetchone():
+                    cursor.execute("ALTER TABLE bot_users ADD COLUMN added_by BIGINT NULL AFTER role")
+                    logger.info("Kolom 'added_by' ditambahkan ke tabel bot_users.")
+            except Exception as err1:
+                logger.warning("Cek/alter added_by: %s", err1)
+
+            try:
+                cursor.execute("SHOW COLUMNS FROM bot_users LIKE 'added_by_name'")
+                if not cursor.fetchone():
+                    cursor.execute("ALTER TABLE bot_users ADD COLUMN added_by_name VARCHAR(255) NULL AFTER added_by")
+                    logger.info("Kolom 'added_by_name' ditambahkan ke tabel bot_users.")
+            except Exception as err2:
+                logger.warning("Cek/alter added_by_name: %s", err2)
+
         logger.info("Inisialisasi tabel database MySQL berhasil.")
     except Exception as e:
         logger.critical("[DATABASE CRITICAL] Gagal membuat tabel di MySQL: %s", e)
         return False
+
 
     if migrate_json:
         try:
@@ -237,17 +259,26 @@ def get_user_role(user_id: int) -> Optional[int]:
         return None
 
 
-def set_user_role(user_id: int, role: int) -> bool:
-    """Simpan atau perbarui role user di MySQL."""
+def set_user_role(
+    user_id: int,
+    role: int,
+    added_by: Optional[int] = None,
+    added_by_name: Optional[str] = None,
+) -> bool:
+    """Simpan atau perbarui role user di MySQL serta catat siapa yang menambahkan."""
     try:
         with get_db_connection() as (conn, cursor):
             cursor.execute(
                 """
-                INSERT INTO bot_users (user_id, role)
-                VALUES (%s, %s)
-                ON DUPLICATE KEY UPDATE role = VALUES(role), updated_at = CURRENT_TIMESTAMP
+                INSERT INTO bot_users (user_id, role, added_by, added_by_name)
+                VALUES (%s, %s, %s, %s)
+                ON DUPLICATE KEY UPDATE 
+                    role = VALUES(role),
+                    added_by = COALESCE(VALUES(added_by), added_by),
+                    added_by_name = COALESCE(VALUES(added_by_name), added_by_name),
+                    updated_at = CURRENT_TIMESTAMP
                 """,
-                (user_id, role),
+                (user_id, role, added_by, added_by_name),
             )
             return True
     except Exception as e:
@@ -267,7 +298,7 @@ def remove_user(user_id: int) -> bool:
 
 
 def get_all_runtime_users() -> Dict[int, int]:
-    """Ambil semua user runtime dari MySQL."""
+    """Ambil semua user runtime dari MySQL (user_id -> role)."""
     try:
         with get_db_connection() as (conn, cursor):
             cursor.execute("SELECT user_id, role FROM bot_users")
@@ -276,6 +307,35 @@ def get_all_runtime_users() -> Dict[int, int]:
     except Exception as e:
         logger.error("[DATABASE ERROR] Gagal mengambil daftar user runtime dari MySQL: %s", e)
         return {}
+
+
+def get_all_runtime_users_details() -> list[dict]:
+    """Ambil daftar semua user runtime lengkap dengan info added_by dan timestamp."""
+    try:
+        with get_db_connection() as (conn, cursor):
+            cursor.execute(
+                """
+                SELECT user_id, role, added_by, added_by_name, created_at, updated_at
+                FROM bot_users
+                ORDER BY created_at ASC
+                """
+            )
+            rows = cursor.fetchall()
+            return [
+                {
+                    "user_id": int(r[0]),
+                    "role": int(r[1]),
+                    "added_by": int(r[2]) if r[2] is not None else None,
+                    "added_by_name": r[3] or "-",
+                    "created_at": str(r[4]) if r[4] else "-",
+                    "updated_at": str(r[5]) if r[5] else "-",
+                }
+                for r in rows
+            ]
+    except Exception as e:
+        logger.error("[DATABASE ERROR] Gagal mengambil detail user runtime dari MySQL: %s", e)
+        return []
+
 
 
 # ── Query Langsung: Penerima Notif Air ──

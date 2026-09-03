@@ -43,21 +43,16 @@ def _parse_ids(key: str) -> Set[int]:
     return {int(x.strip()) for x in raw.split(",") if x.strip().isdigit()}
 
 
-# ── Load dari ENV ──
+# ── Load dari ENV (Hanya Superadmin) ──
 ENV_SUPERADMIN = _parse_ids("SUPERADMIN_USERS")
-ENV_ADMIN = _parse_ids("ADMIN_USERS")
-ENV_USER = _parse_ids("USER_USERS")
 
 
 def _env_role(uid: int) -> int:
-    """Tentukan role dari ENV."""
+    """Tentukan role dari ENV (hanya superadmin)."""
     if uid in ENV_SUPERADMIN:
         return SUPERADMIN
-    if uid in ENV_ADMIN:
-        return ADMIN
-    if uid in ENV_USER:
-        return USER
     return PUBLIC
+
 
 
 class AuthManager:
@@ -98,11 +93,17 @@ class AuthManager:
     def is_superadmin(self, user_id: int) -> bool:
         return self.get_role(user_id) >= SUPERADMIN
 
-    def set_role(self, target_id: int, role: int) -> bool:
-        """Set role user di MySQL. Tidak bisa override ENV user."""
+    def set_role(
+        self,
+        target_id: int,
+        role: int,
+        added_by: Optional[int] = None,
+        added_by_name: Optional[str] = None,
+    ) -> bool:
+        """Set role user di MySQL. Tidak bisa override ENV superadmin."""
         if _env_role(target_id) != PUBLIC:
-            return False  # ENV user tidak bisa diubah runtime
-        return database.set_user_role(target_id, role)
+            return False  # ENV superadmin tidak bisa diubah runtime
+        return database.set_user_role(target_id, role, added_by=added_by, added_by_name=added_by_name)
 
     def remove_user(self, target_id: int) -> bool:
         """Hapus user dari runtime DB MySQL."""
@@ -140,23 +141,13 @@ class AuthManager:
         return rows
 
     def list_all_admins(self) -> List[dict]:
-        """Semua admin terdaftar (ENV + runtime MySQL), untuk referensi saat assign notif."""
-        seen: Set[int] = set()
+        """Semua admin terdaftar (runtime MySQL), untuk referensi saat assign notif."""
         rows = []
         recipients = database.get_air_recipients()
-
-        for uid in sorted(ENV_ADMIN):
-            seen.add(uid)
-            rows.append({
-                "id": uid,
-                "role_name": ROLE_NAMES[ADMIN],
-                "source": "env",
-                "is_recipient": uid in recipients,
-            })
-
         runtime_users = database.get_all_runtime_users()
+
         for uid, role in sorted(runtime_users.items()):
-            if role == ADMIN and uid not in seen:
+            if role == ADMIN:
                 rows.append({
                     "id": uid,
                     "role_name": ROLE_NAMES[ADMIN],
@@ -164,6 +155,7 @@ class AuthManager:
                     "is_recipient": uid in recipients,
                 })
         return rows
+
 
     def add_air_notify_recipient(self, target_id: int) -> Tuple[bool, str]:
         """
@@ -199,14 +191,7 @@ class AuthManager:
         return False, "Gagal menghapus admin dari database MySQL eksternal."
 
     def list_users(self) -> dict:
-        env_map = {}
-        for uid in ENV_SUPERADMIN:
-            env_map[uid] = SUPERADMIN
-        for uid in ENV_ADMIN:
-            env_map[uid] = ADMIN
-        for uid in ENV_USER:
-            env_map[uid] = USER
-
+        env_map = {uid: SUPERADMIN for uid in ENV_SUPERADMIN}
         runtime_users = database.get_all_runtime_users()
         runtime_map = {
             uid: role
@@ -218,6 +203,15 @@ class AuthManager:
             "env": env_map,
             "runtime": runtime_map
         }
+
+    def list_users_detailed(self) -> dict:
+        env_map = {uid: SUPERADMIN for uid in ENV_SUPERADMIN}
+        details = database.get_all_runtime_users_details()
+        return {
+            "env": env_map,
+            "runtime": details
+        }
+
 
 
 # Singleton
