@@ -678,34 +678,53 @@ async def whoami_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 @rate_limit
 @public_only
 async def clean_chat_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Hapus riwayat pesan bot & user terbaru di chat ini agar tampilan bersih."""
+    """Hapus riwayat pesan bot & user terbaru secara cepat dan paralel."""
     chat_id = update.effective_chat.id
     current_msg_id = update.effective_message.message_id
     role = auth.get_role(update.effective_user.id)
 
-    # Ambil hingga 100 pesan terakhir (batas maksimal per batch Telegram Bot API)
-    total_messages = 100
-    start_id = max(1, current_msg_id - total_messages)
-    msg_ids = list(range(start_id, current_msg_id + 1))
+    # Ambil ID pesan kandidat (maks 35 pesan terakhir)
+    # PENTING: Jangan pernah sentuh ID <= 1 karena itu service message Telegram
+    tracked: set = set()
+    if context and context.user_data is not None:
+        tracked = context.user_data.get("tracked_msg_ids", set())
+        tracked.add(current_msg_id)
 
-    # Hapus batch sekaligus menggunakan delete_messages (Bot API 7.0+)
-    try:
-        await context.bot.delete_messages(chat_id=chat_id, message_ids=msg_ids)
-    except Exception:
-        # Fallback ke penghapusan individual jika delete_messages ditolak (misal ada pesan lawas)
-        for mid in reversed(msg_ids):
-            try:
-                await context.bot.delete_message(chat_id=chat_id, message_id=mid)
-            except Exception:
-                pass
+    start_id = max(2, current_msg_id - 35)
+    target_ids = set(range(start_id, current_msg_id + 1))
+    target_ids.update(tracked)
+    valid_ids = sorted([mid for mid in target_ids if mid >= 2], reverse=True)
 
-    # Kirim satu pesan fresh dengan keyboard utama tetap aktif
-    await context.bot.send_message(
+    # 1. Coba hapus batch sekaligus (1 API call cepat)
+    deleted_batch = False
+    if valid_ids:
+        try:
+            await context.bot.delete_messages(chat_id=chat_id, message_ids=valid_ids)
+            deleted_batch = True
+        except Exception:
+            pass
+
+    # 2. Jika batch ditolak (misal ada ID yang sudah hilang), hapus paralel via asyncio.gather
+    if not deleted_batch and valid_ids:
+        chunk_size = 10
+        for i in range(0, len(valid_ids), chunk_size):
+            chunk = valid_ids[i:i + chunk_size]
+            tasks = [context.bot.delete_message(chat_id=chat_id, message_id=mid) for mid in chunk]
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+    if context and context.user_data is not None:
+        context.user_data["tracked_msg_ids"] = set()
+
+    # 3. Kirim satu pesan baru dengan reply keyboard aktif
+    sent_msg = await context.bot.send_message(
         chat_id=chat_id,
         text="🧹 *Pesan berhasil dibersihkan!*\nSilakan gunakan menu di bawah:",
         parse_mode="Markdown",
         reply_markup=_main_keyboard(role),
     )
+    if sent_msg and hasattr(sent_msg, "message_id") and context and context.user_data is not None:
+        context.user_data["tracked_msg_ids"].add(sent_msg.message_id)
+
 
 
 

@@ -85,7 +85,27 @@ async def test_clean_chat_command():
 
 
 @pytest.mark.asyncio
+async def test_clean_chat_command_fallback_parallel():
+    import bot
+    fake_update = MagicMock()
+    fake_context = MagicMock()
+    fake_update.effective_chat.id = 12345
+    fake_update.effective_message.message_id = 10
+    fake_update.effective_user.id = 12345
+    fake_context.bot.delete_messages = AsyncMock(side_effect=Exception("BadRequest"))
+    fake_context.bot.delete_message = AsyncMock()
+    fake_context.bot.send_message = AsyncMock()
+    fake_context.user_data = {}
+
+    await bot.clean_chat_command(fake_update, fake_context)
+
+    assert fake_context.bot.delete_message.call_count > 0
+    fake_context.bot.send_message.assert_called_once()
+
+
+@pytest.mark.asyncio
 async def test_callback_users_list():
+
     import bot
     fake_query = MagicMock()
     fake_query.message.reply_text = AsyncMock()
