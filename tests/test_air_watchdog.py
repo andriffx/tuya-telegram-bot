@@ -125,6 +125,7 @@ async def test_air_watchdog_detects_idle_and_auto_shuts_off():
 
     with patch("bot.run_tuya", new_callable=AsyncMock) as mock_tuya, \
          patch("bot._execute_air_auto_off", new_callable=AsyncMock) as mock_auto_off, \
+         patch.object(config, "AIR_AUTO_OFF_SAMPLE_COUNT", 3), \
          patch.object(config, "AIR_AUTO_OFF_CHECK_MINUTES", 0.0005):
 
         mock_tuya.side_effect = [
@@ -133,6 +134,7 @@ async def test_air_watchdog_detects_idle_and_auto_shuts_off():
             power_response,   # sample 2
             power_response,   # sample 3
         ]
+
 
         task = asyncio.create_task(bot._air_watchdog_loop(fake_context, fake_user))
         await asyncio.sleep(0.15)

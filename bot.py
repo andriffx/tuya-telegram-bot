@@ -509,15 +509,17 @@ async def _execute_air_auto_off(context: ContextTypes.DEFAULT_TYPE, user, reason
         try:
             if reason == "max_time":
                 user_msg = (
-                    f"💧 *Pompa Air Dimatikan Otomatis*\n\n"
-                    f"Pompa air telah menyala selama *{config.AIR_AUTO_OFF_MAX_MINUTES} menit* (batas maksimal pemakaian).\n"
-                    f"Sistem mematikannya secara otomatis demi keamanan & hemat listrik."
+                    f"💧 *Pemberitahuan Otomatisasi Pompa Air*\n\n"
+                    f"Pompa air telah mencapai batas durasi operasional maksimal (*{config.AIR_AUTO_OFF_MAX_MINUTES} menit*).\n\n"
+                    f"🛡️ *Tindakan Sistem*: Pompa telah dinonaktifkan secara otomatis guna menghindari pemborosan listrik dan air.\n\n"
+                    f"_Apabila Anda masih memerlukan air atau tindakan sistem ini merupakan suatu kesalahan, silakan nyalakan kembali melalui menu pompa air._"
                 )
             else:
                 user_msg = (
-                    f"💧 *Pompa Air Dimatikan Otomatis*\n\n"
-                    f"Pompa air terdeteksi *sudah tidak digunakan* (daya: `{power_w:.1f} W`).\n"
-                    f"Sistem mematikan pompa secara otomatis demi keamanan & hemat listrik."
+                    f"💧 *Pemberitahuan Otomatisasi Pompa Air*\n\n"
+                    f"Berdasarkan pemantauan sistem, pompa air terdeteksi *sudah tidak digunakan* (beban daya: `{power_w:.1f} W`).\n\n"
+                    f"🛡️ *Tindakan Sistem*: Pompa telah dinonaktifkan secara otomatis guna menghindari pemborosan listrik dan air.\n\n"
+                    f"_Apabila Anda masih memerlukan air atau tindakan sistem ini merupakan suatu kesalahan, silakan nyalakan kembali melalui menu pompa air._"
                 )
             await context.bot.send_message(chat_id=user_id, text=user_msg, parse_mode="Markdown")
         except Exception as e:
@@ -531,20 +533,21 @@ async def _execute_air_auto_off(context: ContextTypes.DEFAULT_TYPE, user, reason
 
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         reason_desc = (
-            f"Mencapai batas waktu maksimal {config.AIR_AUTO_OFF_MAX_MINUTES} menit"
+            f"Mencapai batas waktu operasional maksimal {config.AIR_AUTO_OFF_MAX_MINUTES} menit"
             if reason == "max_time"
-            else f"Terdeteksi idle / tidak digunakan (daya: `{power_w:.1f} W`)"
+            else f"Terdeteksi idle / tidak digunakan (beban daya: `{power_w:.1f} W`)"
         )
 
         admin_text = (
             f"🚨 *Notifikasi Otomatisasi Pompa Air*\n\n"
-            f"Pompa air yang dinyalakan oleh:\n"
+            f"Pompa air yang sebelumnya diaktifkan oleh:\n"
             f"👤 *User*   : `{user_name}` (@{username or 'none'})\n"
             f"🆔 *ID*     : `{user_id}`\n\n"
-            f"Telah *DIMATIKAN OTOMATIS* oleh sistem.\n"
-            f"📌 *Alasan* : {reason_desc}\n"
-            f"⏰ *Waktu*  : `{timestamp}`"
+            f"Telah *dinonaktifkan secara otomatis* oleh sistem.\n"
+            f"📌 *Keterangan*: {reason_desc}\n"
+            f"⏰ *Waktu*     : `{timestamp}`"
         )
+
 
         for chat_id in admin_recipients:
             try:
@@ -593,7 +596,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(
         f"👋 Halo {user}!\n\n"
-        f"🤖 *Bot Smart Home BARDI*\n"
+        f"🤖 *Bot Smart Home AndriTech*\n"
         f"Role Anda: *{ROLE_NAMES[role]}*\n\n"
         f"Pilih menu di bawah untuk mulai:",
         parse_mode="Markdown",
