@@ -54,17 +54,17 @@ logger = logging.getLogger(__name__)
 def _main_keyboard(role: int) -> ReplyKeyboardMarkup:
     """Menu utama sesuai role."""
     if role == PUBLIC:
-        kb = [["🪪 Akun Saya"], ["📖 Bantuan"]]
+        kb = [["🪪 Akun Saya", "🧹 Clean Message"], ["📖 Bantuan"]]
     elif role == USER:
-        kb = [["💧 Air"], ["📊 Monitoring"], ["🪪 Akun Saya"]]
+        kb = [["💧 Air"], ["📊 Monitoring"], ["🪪 Akun Saya", "🧹 Clean Message"]]
     elif role == ADMIN:
-        kb = [["💧 Air", "💡 Lampu"], ["📊 Monitoring"], ["🪪 Akun Saya"]]
+        kb = [["💧 Air", "💡 Lampu"], ["📊 Monitoring"], ["🪪 Akun Saya", "🧹 Clean Message"]]
     else:  # SUPERADMIN
         kb = [
             ["💧 Air", "💡 Lampu"],
             ["📊 Monitoring"],
             ["👑 Manajemen Tuyabot"],
-            ["🪪 Akun Saya"],
+            ["🪪 Akun Saya", "🧹 Clean Message"],
         ]
     return ReplyKeyboardMarkup(kb, resize_keyboard=True)
 
@@ -388,6 +388,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• 💡 Lampu — Kontrol lampu",
         "• 📊 Monitoring — Cek status perangkat",
         "• 🪪 Akun Saya — Lihat ID & role Anda",
+        "• 🧹 Clean Message — Hapus riwayat chat agar layar bersih",
     ]
     if role == SUPERADMIN:
         lines.append("• 👑 Manajemen Tuyabot — Kelola user, notif air & database")
@@ -421,6 +422,41 @@ async def whoami_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown",
         reply_markup=_main_keyboard(role),
     )
+
+
+@rate_limit
+@public_only
+async def clean_chat_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Hapus riwayat pesan bot & user terbaru di chat ini agar tampilan bersih."""
+    chat_id = update.effective_chat.id
+    current_msg_id = update.effective_message.message_id
+    role = auth.get_role(update.effective_user.id)
+
+    # Ambil hingga 100 pesan terakhir (batas maksimal per batch Telegram Bot API)
+    total_messages = 100
+    start_id = max(1, current_msg_id - total_messages)
+    msg_ids = list(range(start_id, current_msg_id + 1))
+
+    # Hapus batch sekaligus menggunakan delete_messages (Bot API 7.0+)
+    try:
+        await context.bot.delete_messages(chat_id=chat_id, message_ids=msg_ids)
+    except Exception:
+        # Fallback ke penghapusan individual jika delete_messages ditolak (misal ada pesan lawas)
+        for mid in reversed(msg_ids):
+            try:
+                await context.bot.delete_message(chat_id=chat_id, message_id=mid)
+            except Exception:
+                pass
+
+    # Kirim satu pesan fresh dengan keyboard utama tetap aktif
+    await context.bot.send_message(
+        chat_id=chat_id,
+        text="🧹 *Pesan berhasil dibersihkan!*\nSilakan gunakan menu di bawah:",
+        parse_mode="Markdown",
+        reply_markup=_main_keyboard(role),
+    )
+
+
 
 
 # ═══════════════════════════════════════════════════════
@@ -703,6 +739,11 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ── 📖 Bantuan ──
     elif text == "📖 Bantuan":
         await help_command(update, context)
+
+    # ── 🧹 Clean Message ──
+    elif text in ("🧹 Clean Message", "🧹 Bersihkan Chat", "🧹 Clean Chat"):
+        await clean_chat_command(update, context)
+
 
     # ── Unknown text ──
     else:
@@ -1175,7 +1216,10 @@ def build_application():
     application.add_handler(CommandHandler("allowuser", allowuser_command))
     application.add_handler(CommandHandler("removeuser", removeuser_command))
     application.add_handler(CommandHandler("cleanlogs", cleanlogs_command))
+    application.add_handler(CommandHandler("clean", clean_chat_command))
+    application.add_handler(CommandHandler("cleanmessage", clean_chat_command))
     application.add_handler(CallbackQueryHandler(callback_handler))
+
 
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, menu_handler))
     application.add_handler(MessageHandler(filters.TEXT | filters.COMMAND, unknown_message))

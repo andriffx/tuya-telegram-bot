@@ -65,3 +65,23 @@ async def test_cleanlogs_callback():
         assert "Total: *6* baris log berhasil dibersihkan" in last_reply
 
 
+@pytest.mark.asyncio
+async def test_clean_chat_command():
+    import bot
+    fake_update = MagicMock()
+    fake_context = MagicMock()
+    fake_update.effective_chat.id = 12345
+    fake_update.effective_message.message_id = 100
+    fake_update.effective_user.id = 12345
+    fake_context.bot.delete_messages = AsyncMock()
+    fake_context.bot.send_message = AsyncMock()
+
+    await bot.clean_chat_command(fake_update, fake_context)
+
+    fake_context.bot.delete_messages.assert_called_once()
+    fake_context.bot.send_message.assert_called_once()
+    sent_text = fake_context.bot.send_message.call_args[1]["text"]
+    assert "Pesan berhasil dibersihkan" in sent_text
+
+
+
