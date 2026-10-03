@@ -7,8 +7,12 @@ services:
     restart: unless-stopped
     environment:
       TZ: Asia/Makassar
+    # Urutan penting: file belakangan meng-override file sebelumnya.
+    # .env.dockhand (dibuat Dockhand, berisi token asli) harus paling akhir.
     env_file:
       - path: .env
+        required: false
+      - path: .env.dockhand
         required: false
 
 

@@ -10,11 +10,15 @@ import logging
 from dotenv import load_dotenv
 
 load_dotenv()
+# .env.dockhand dibuat Dockhand saat deploy (berisi nilai asli); prioritas tertinggi.
+load_dotenv(".env.dockhand", override=True)
 logger = logging.getLogger(__name__)
 
 
 # ── Telegram ──
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+if TELEGRAM_BOT_TOKEN.strip() == "your_bot_token_here":
+    logger.error("TELEGRAM_BOT_TOKEN masih placeholder dari .env.example!")
 
 
 def _parse_version(env_key: str, default: float = 3.5):

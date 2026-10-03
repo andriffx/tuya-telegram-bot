@@ -45,3 +45,6 @@ info.md
 tuya-raw.json
 *.backup
 *.bak
+
+.env.example
+.env.dockhand
