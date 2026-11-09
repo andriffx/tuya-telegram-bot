@@ -1469,17 +1469,19 @@ def build_application():
     if not TELEGRAM_BOT_TOKEN:
         raise RuntimeError("TELEGRAM_BOT_TOKEN belum di-set!")
 
-    request = HTTPXRequest(
-        connect_timeout=30.0,
-        read_timeout=30.0,
-        write_timeout=30.0,
-        pool_timeout=30.0,
+    bot_request = HTTPXRequest(
+        connect_timeout=15.0,
+        read_timeout=15.0,
+    )
+    updates_request = HTTPXRequest(
+        connect_timeout=15.0,
+        read_timeout=35.0,  # Harus lebih besar dari timeout start_polling (20s)
     )
     application = (
         Application.builder()
         .token(TELEGRAM_BOT_TOKEN)
-        .request(request)
-        .get_updates_request(request)
+        .request(bot_request)
+        .get_updates_request(updates_request)
         .build()
     )
 
@@ -1512,7 +1514,11 @@ def main():
     logger.info("Memulai bot Telegram...")
     database.init_db(migrate_json=True)
     application = build_application()
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+    application.run_polling(
+        allowed_updates=Update.ALL_TYPES,
+        timeout=20,
+        poll_interval=2.0,
+    )
 
 
 

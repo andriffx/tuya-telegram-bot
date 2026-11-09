@@ -130,7 +130,11 @@ async def run_all():
     async with application:
         await application.initialize()
         await application.start()
-        await application.updater.start_polling(allowed_updates=Update.ALL_TYPES)
+        await application.updater.start_polling(
+            allowed_updates=Update.ALL_TYPES,
+            timeout=20,
+            poll_interval=2.0,
+        )
         logger.info("Bot Telegram aktif")
         logger.info("Dashboard API: http://%s:%s/", API_HOST, API_PORT)
 
