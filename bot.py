@@ -1475,7 +1475,7 @@ def build_application():
     )
     updates_request = HTTPXRequest(
         connect_timeout=15.0,
-        read_timeout=35.0,  # Harus lebih besar dari timeout start_polling (20s)
+        read_timeout=25.0,
     )
     application = (
         Application.builder()
@@ -1516,8 +1516,9 @@ def main():
     application = build_application()
     application.run_polling(
         allowed_updates=Update.ALL_TYPES,
-        timeout=20,
-        poll_interval=2.0,
+        timeout=10,
+        poll_interval=1.0,
+        drop_pending_updates=True,
     )
 
 
