@@ -48,6 +48,7 @@ logging.basicConfig(
     handlers=handlers
 )
 logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 # ═══════════════════════════════════════════════════════
@@ -1065,6 +1066,11 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception:
                 pass
     except Exception as e:
+        from telegram.error import BadRequest
+        if isinstance(e, BadRequest) and ("Query is too old" in str(e) or "Message is not modified" in str(e)):
+            logger.warning("[Telegram Callback] Interaksi kadaluarsa diabaikan (%s): %s", data, e)
+            return
+
         logger.error("Error callback %s: %s", data, e)
         try:
             await query.message.reply_text("⚠️ Terjadi kesalahan. Coba lagi.")
@@ -1440,8 +1446,22 @@ async def unknown_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     error = context.error
-    logger.error("Update %s caused error %s", update, error, exc_info=error)
+    from telegram.error import NetworkError, TimedOut, BadRequest
 
+    # Abaikan logging ERROR dan stack trace untuk gangguan koneksi jaringan sementara
+    if isinstance(error, (NetworkError, TimedOut)):
+        logger.warning(
+            "[Telegram Polling] Gangguan koneksi sementara: %s (sedang mencoba ulang otomatis...)",
+            error,
+        )
+        return
+
+    # Abaikan callback kadaluarsa atau konten tidak berubah (hal wajar pada UI inline Telegram)
+    if isinstance(error, BadRequest) and ("Query is too old" in str(error) or "Message is not modified" in str(error)):
+        logger.warning("[Telegram API] BadRequest diabaikan: %s", error)
+        return
+
+    logger.error("Update %s caused error %s", update, error, exc_info=error)
 
     if not update:
         return
@@ -1470,12 +1490,18 @@ def build_application():
         raise RuntimeError("TELEGRAM_BOT_TOKEN belum di-set!")
 
     bot_request = HTTPXRequest(
+        connection_pool_size=256,
         connect_timeout=15.0,
         read_timeout=15.0,
+        write_timeout=15.0,
+        pool_timeout=5.0,
     )
     updates_request = HTTPXRequest(
+        connection_pool_size=1,
         connect_timeout=15.0,
-        read_timeout=25.0,
+        read_timeout=30.0,
+        write_timeout=15.0,
+        pool_timeout=5.0,
     )
     application = (
         Application.builder()
@@ -1516,8 +1542,8 @@ def main():
     application = build_application()
     application.run_polling(
         allowed_updates=Update.ALL_TYPES,
-        timeout=10,
-        poll_interval=1.0,
+        timeout=20,
+        poll_interval=0.0,
         drop_pending_updates=True,
     )
 

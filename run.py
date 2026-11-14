@@ -130,11 +130,15 @@ async def run_all():
     async with application:
         await application.initialize()
         await application.start()
+        def polling_error_callback(exc):
+            application.create_task(application.process_error(error=exc, update=None))
+
         await application.updater.start_polling(
             allowed_updates=Update.ALL_TYPES,
-            timeout=10,
-            poll_interval=1.0,
+            timeout=20,
+            poll_interval=0.0,
             drop_pending_updates=True,
+            error_callback=polling_error_callback,
         )
         logger.info("Bot Telegram aktif")
         logger.info("Dashboard API: http://%s:%s/", API_HOST, API_PORT)
@@ -164,6 +168,8 @@ def main():
         level=logging.INFO,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
     asyncio.run(run_all())
 
 
