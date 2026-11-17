@@ -49,3 +49,4 @@ Thumbs.db
 *.sqlite
 *.sqlite3
 data/
+backup/

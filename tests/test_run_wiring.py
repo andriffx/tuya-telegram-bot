@@ -53,8 +53,12 @@ async def test_housekeeping_job_actually_runs_cleanup(monkeypatch):
 def test_scheduler_registers_expected_jobs():
     scheduler = run.build_scheduler()
     names = {job.name for job in scheduler.jobs}
-    assert names == {"cache-warm", "power-snapshot", "housekeeping"}
+    assert names == {"cache-warm", "power-snapshot", "housekeeping", "backup"}
     housekeeping = next(j for j in scheduler.jobs if j.name == "housekeeping")
     # Tidak boleh jalan di awal proses; cukup sekali sehari.
     assert housekeeping.interval == run.HOUSEKEEPING_INTERVAL_HOURS * 3600
     assert housekeeping.initial_delay == housekeeping.interval
+
+    backup = next(j for j in scheduler.jobs if j.name == "backup")
+    assert backup.interval == run.BACKUP_INTERVAL_HOURS * 3600
+    assert backup.initial_delay == 900, "backup pertama tidak boleh menunggu 24 jam"

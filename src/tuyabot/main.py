@@ -11,7 +11,13 @@ import sys
 import uvicorn
 from telegram import Update
 
-from .config import POWER_LOG_INTERVAL_MINUTES, validate_config
+from .config import (
+    BACKUP_DIR,
+    BACKUP_INTERVAL_HOURS,
+    BACKUP_RETENTION_DAYS,
+    POWER_LOG_INTERVAL_MINUTES,
+    validate_config,
+)
 from .devices.service import run_tuya, tuya
 from .devices.service import shutdown as device_shutdown
 from .infra.asyncdb import run_db
@@ -79,6 +85,13 @@ async def warm_cache() -> None:
     await warm_state_cache()
 
 
+async def run_backup() -> dict:
+    """Salinan SQLite (VACUUM INTO) + buang salinan lebih tua dari retensi."""
+    result = await run_db(database.backup_to, BACKUP_DIR, BACKUP_RETENTION_DAYS)
+    logger.info("[BACKUP] Selesai: %s", result["path"])
+    return result
+
+
 def build_scheduler() -> Scheduler:
     """Satu scheduler untuk semua pekerjaan berkala.
 
@@ -104,6 +117,13 @@ def build_scheduler() -> Scheduler:
         HOUSEKEEPING_INTERVAL_HOURS * 3600,
         run_housekeeping,
         initial_delay=HOUSEKEEPING_INTERVAL_HOURS * 3600,
+    )
+    scheduler.add_job(
+        "backup",
+        BACKUP_INTERVAL_HOURS * 3600,
+        run_backup,
+        # Backup pertama 15 menit setelah start, bukan menunggu 24 jam.
+        initial_delay=900,
     )
     return scheduler
 

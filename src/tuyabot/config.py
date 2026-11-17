@@ -86,6 +86,12 @@ SQLITE_BUSY_TIMEOUT_MS = int(os.getenv("SQLITE_BUSY_TIMEOUT_MS", "5000"))
 POWER_LOG_INTERVAL_MINUTES = int(os.getenv("POWER_LOG_INTERVAL_MINUTES", "5"))
 LOG_RETENTION_DAYS = int(os.getenv("LOG_RETENTION_DAYS", "60"))
 
+# ── Backup SQLite ──
+# Salinan dibuat dengan `VACUUM INTO` (konsisten, tanpa menghentikan bot).
+BACKUP_DIR = os.getenv("BACKUP_DIR", "backup")
+BACKUP_INTERVAL_HOURS = max(1, int(os.getenv("BACKUP_INTERVAL_HOURS", "24")))
+BACKUP_RETENTION_DAYS = max(1, int(os.getenv("BACKUP_RETENTION_DAYS", "14")))
+
 # ── Air Auto-Off Watchdog (Role User) ──
 AIR_AUTO_OFF_IDLE_WATT = float(os.getenv("AIR_AUTO_OFF_IDLE_WATT", "200.0"))
 AIR_AUTO_OFF_CHECK_MINUTES = int(os.getenv("AIR_AUTO_OFF_CHECK_MINUTES", "3"))

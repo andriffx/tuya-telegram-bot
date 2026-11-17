@@ -433,6 +433,7 @@ function renderSystem() {
     set('engine', String(stats.engine ?? 'sqlite'));
     set('size', `${(Number(stats.size_bytes || 0) / 1024).toFixed(0)} KB`);
     set('retention', `${stats.retention_days ?? '—'} hari`);
+    set('backup', stats.last_backup ? `${stats.last_backup} (${stats.backup_count})` : 'belum ada');
 
     const body = $('#error-rows');
     body.replaceChildren();

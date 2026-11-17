@@ -489,9 +489,45 @@ tidak muat di 390 px (padding tab dikecilkan, jam disembunyikan di layar kecil).
 
 ---
 
-## Fase 6 — Ops & dokumentasi (belum)
+## Fase 6 — Ops & dokumentasi (selesai)
 
-- Uptime Kuma → `http://127.0.0.1:8080/healthz` (tanpa auth).
-- README ditulis ulang: arsitektur, env var, deploy, rollback, cara menambah device baru
-  (termasuk kapan `scan_devices.py` masih dipakai).
-- Jadwal backup SQLite harian + retensi 14 hari.
+### Backup otomatis
+
+Job `backup` di scheduler (`BACKUP_INTERVAL_HOURS`, default 24 jam; jalan pertama 15 menit
+setelah start) memanggil `storage.sqlite_store.backup_to()`:
+
+- `VACUUM INTO backup/tuyabot-YYYY-MM-DD_HHMMSS.db` — konsisten tanpa menghentikan proses,
+  tidak perlu menyentuh volume dari sisi host.
+- Menghapus salinan lebih tua dari `BACKUP_RETENTION_DAYS` (default 14).
+- `get_db_stats()` melaporkan `backup_dir`, `backup_count`, `last_backup`; dashboard
+  menampilkannya di tab Sistem.
+
+Alasannya dikerjakan di aplikasi, bukan cron host: tidak ada langkah deploy tambahan, ikut
+berjalan di container yang sama, dan tidak bergantung pada zona waktu host.
+
+### Monitoring
+
+`/healthz` (tanpa auth, tanpa cek database) adalah target Uptime Kuma. `/api/health` tetap
+ada untuk readiness yang lebih dalam (database + kesegaran cache) dan butuh autentikasi.
+README memuat tabel setelan Uptime Kuma supaya tinggal diisi.
+
+### Dokumentasi
+
+README diperbarui: login & sesi, SSE, variabel env baru (cache, timeout, sesi, backup),
+struktur paket, langkah deploy (termasuk entrypoint yang mengurus kepemilikan volume),
+backup & restore, dan troubleshooting perangkat.
+
+### Verifikasi
+
+- `ruff check .` bersih, `pytest -q` **105 passed**.
+- `tests/test_backup.py`: salinan bisa dibuka dan isinya sama (baris + nilai), retensi
+  menghapus salinan 40 hari tapi mempertahankan yang masih dalam masa retensi, penulisan
+  setelah backup tetap jalan, dan statistik melaporkan backup.
+- `test_run_wiring.py`: job `backup` terdaftar dengan interval retensi benar dan
+  `initial_delay=900` (bukan menunggu 24 jam).
+
+### Yang menjadi tugas operator (bukan kode)
+
+Membuat monitor di panel Uptime Kuma, dan memutuskan apakah dashboard akan diekspos lewat
+reverse proxy. Keduanya ada di infrastruktur Anda, bukan di repo.
+

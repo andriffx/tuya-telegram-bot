@@ -348,6 +348,57 @@ tuya-telegram-bot/
 
 ---
 
+## 📈 Monitoring & Backup
+
+### Uptime Kuma (dilakukan di panel Anda)
+
+Bot sudah menyediakan liveness probe yang **tidak butuh API key** dan **tidak menyentuh
+database**: `GET /healthz` → `{"status":"ok"}`.
+
+Pengaturan di Uptime Kuma:
+
+| Field | Nilai |
+|---|---|
+| Monitor type | HTTP(s) – Keyword |
+| URL | `http://127.0.0.1:8080/healthz` (dari host VPS) atau `http://<IP-host>:8080/healthz` bila Kuma di mesin lain |
+| Keyword | `ok` |
+| Heartbeat interval | 60 detik |
+| Retries | 2 |
+| Authentication | tidak ada |
+
+Pakai `/healthz`, jangan `/api/health`: yang kedua butuh autentikasi dan ikut memeriksa
+database, sehingga MySQL/SQLite yang sedang sibuk akan terlihat seperti bot mati.
+
+### Backup otomatis
+
+Scheduler menjalankan job `backup` setiap `BACKUP_INTERVAL_HOURS` (default 24 jam; yang
+pertama 15 menit setelah start):
+
+- Salinan dibuat dengan `VACUUM INTO` → konsisten walau bot sedang menulis, tanpa downtime.
+- File: `backup/tuyabot-YYYY-MM-DD_HHMMSS.db` (di container: `/app/backup`).
+- Salinan lebih tua dari `BACKUP_RETENTION_DAYS` (default 14) dihapus otomatis.
+- Status terakhir terlihat di dashboard tab **Sistem** → "Backup terakhir".
+
+Backup manual tanpa menghentikan bot:
+
+```bash
+docker compose exec tuyabot python -c "
+import sqlite3; sqlite3.connect('/app/data/tuyabot.db').execute(\"VACUUM INTO '/app/backup/manual.db'\")"
+```
+
+### Restore
+
+```bash
+docker compose stop tuyabot
+cp backup/tuyabot-2026-11-17_030000.db data/tuyabot.db
+rm -f data/tuyabot.db-wal data/tuyabot.db-shm    # sisa WAL dari file lama
+docker compose start tuyabot
+```
+
+Kepemilikan file tidak perlu diurus: entrypoint memperbaikinya saat start.
+
+---
+
 ## 🔧 Troubleshooting
 
 ### Perangkat tidak terhubung

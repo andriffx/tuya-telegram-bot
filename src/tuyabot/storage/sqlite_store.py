@@ -14,8 +14,10 @@ import logging
 import sqlite3
 import sys
 import threading
+import time
 import traceback
 from contextlib import contextmanager
+from datetime import datetime
 from pathlib import Path
 
 from ..config import SQLITE_BUSY_TIMEOUT_MS, SQLITE_PATH
@@ -567,9 +569,10 @@ def get_recent_activities(limit: int = 50) -> list[dict]:
 
 def get_db_stats() -> dict:
     """Statistik ringkas database (dipakai dashboard)."""
-    from ..config import LOG_RETENTION_DAYS
+    from ..config import BACKUP_DIR, LOG_RETENTION_DAYS
 
     path = Path(SQLITE_PATH)
+    backups = sorted(Path(BACKUP_DIR).glob("tuyabot-*.db")) if Path(BACKUP_DIR).is_dir() else []
     stats = {
         "connected": False,
         "engine": "sqlite",
@@ -578,6 +581,9 @@ def get_db_stats() -> dict:
         "path": str(path),
         "size_bytes": path.stat().st_size if path.exists() else 0,
         "retention_days": LOG_RETENTION_DAYS,
+        "backup_dir": BACKUP_DIR,
+        "backup_count": len(backups),
+        "last_backup": backups[-1].name if backups else None,
         "total_power_logs": 0,
         "total_activity_logs": 0,
         "total_error_logs": 0,
@@ -599,6 +605,45 @@ def get_db_stats() -> dict:
     except Exception as e:
         logger.warning("[DATABASE WARNING] Gagal mengambil statistik database: %s", e)
     return stats
+
+
+# ── Backup ──
+
+
+def backup_to(directory: str, retention_days: int = 14) -> dict:
+    """Salinan konsisten database dengan `VACUUM INTO`, lalu buang salinan lama.
+
+    `VACUUM INTO` menulis database utuh dalam satu transaksi baca — hasilnya tidak
+    setengah jadi walau bot sedang menulis, dan tidak perlu menghentikan proses.
+    """
+    target_dir = Path(directory)
+    target_dir.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+    dest = target_dir / f"tuyabot-{stamp}.db"
+
+    with get_db_connection() as (conn, _cursor):
+        conn.execute("VACUUM INTO ?", (str(dest),))
+
+    removed = 0
+    cutoff = time.time() - retention_days * 86400
+    for old in target_dir.glob("tuyabot-*.db"):
+        if old == dest:
+            continue
+        try:
+            if old.stat().st_mtime < cutoff:
+                old.unlink()
+                removed += 1
+        except OSError as e:
+            logger.warning("[BACKUP] Gagal menghapus salinan lama %s: %s", old, e)
+
+    size = dest.stat().st_size if dest.exists() else 0
+    logger.info(
+        "[BACKUP] Salinan dibuat: %s (%.0f KB), %d salinan lama dibuang",
+        dest,
+        size / 1024,
+        removed,
+    )
+    return {"path": str(dest), "size_bytes": size, "removed": removed}
 
 
 # ── Housekeeping / Log Retention ──
