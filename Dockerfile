@@ -63,14 +63,10 @@ ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["python", "-m", "tuyabot.main"]
 
 
-# ── Stage 3: migrasi MySQL → SQLite (bukan untuk produksi) ──
-# Dipakai sekali saat pindah penyimpanan:
-#   docker build --target migration -t tuyabot-migration .
-FROM runtime AS migration
-
-# mysql-connector-python sengaja TIDAK ada di image runtime; hanya di stage ini.
-USER root
-RUN /opt/venv/bin/pip install --no-cache-dir "mysql-connector-python>=9.0.0"
-
-# entrypoint tetap dipakai: ia merapikan kepemilikan ./data lalu turun ke uid 10001
-
+# ── Catatan: migrasi data lama ──
+# Skrip `scripts/migrate_mysql_to_sqlite.py` ikut ke image ini (lihat COPY scripts
+# di atas) dan `mysql-connector-python` ada di requirements.txt, jadi migrasi
+# dijalankan langsung di container yang sedang berjalan:
+#   docker exec -u app tuyabot-withdb python scripts/migrate_mysql_to_sqlite.py
+# Tidak ada stage/image terpisah dan tidak perlu mematikan bot: skrip hanya
+# menyisipkan baris, sementara bot membaca tabel user per permintaan (tanpa cache).

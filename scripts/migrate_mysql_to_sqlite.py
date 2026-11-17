@@ -1,17 +1,21 @@
 #!/usr/bin/env python3
 """Migrasi data dari MySQL (implementasi lama) ke SQLite (implementasi baru).
 
-Dijalankan SEKALI di server, saat bot berhenti.
+Dijalankan SEKALI, manual, di dalam container bot yang sedang berjalan. Tidak ada
+stage/image terpisah dan bot tidak perlu dimatikan: skrip ini hanya menyisipkan baris,
+sementara bot membaca tabel user dari SQLite per permintaan (tanpa cache memori).
 
 Default: hanya memindahkan **data akses** — `bot_users` (role user runtime) dan
 `bot_air_recipients` (siapa yang menerima notifikasi air). Log daya/aktivitas/error
 adalah telemetri lama dan tidak dibawa; kalau perlu, pakai `--include-logs`.
 
-Contoh:
+Contoh (dari host, container bot sudah jalan):
 
-    docker build --target migration -t tuyabot-migration .
-    docker run --rm --network host --env-file .env -v "$PWD/data:/app/data" \
-        tuyabot-migration python scripts/migrate_mysql_to_sqlite.py
+    docker exec -u app tuyabot-withdb python scripts/migrate_mysql_to_sqlite.py
+    docker exec -u app tuyabot-withdb python scripts/migrate_mysql_to_sqlite.py --include-logs
+
+`-u app` wajib: tanpa itu perintah jalan sebagai root dan file DB jadi milik root,
+sehingga bot (uid 10001) tidak bisa menulis.
 
 Rollback: kembalikan file `mysqldump` ke MySQL dan jalankan image versi lama.
 """

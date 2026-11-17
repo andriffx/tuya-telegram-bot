@@ -93,13 +93,20 @@ def test_compiler_kept_out_of_runtime_stage():
     assert "build-essential" not in runtime_stage[1], "compiler tidak boleh ikut ke image akhir"
 
 
-def test_migration_dependency_only_in_migration_stage():
-    """mysql-connector tidak boleh masuk runtime, tapi harus ada untuk skrip migrasi."""
-    text = DOCKERFILE_PATH.read_text(encoding="utf-8")
-    runtime_and_after = text.split("FROM python:3.11-slim AS runtime", 1)[1]
-    runtime_only = runtime_and_after.split("FROM runtime AS migration", 1)[0]
-    migration_only = runtime_and_after.split("FROM runtime AS migration", 1)[1]
+def test_migration_runs_inside_the_runtime_image():
+    """Migrasi dijalankan lewat `docker exec`: skrip + driver harus ada di image yang sama."""
+    req = (ROOT / "requirements.txt").read_text(encoding="utf-8")
+    assert "mysql-connector-python" in req, "driver MySQL harus ada agar migrasi bisa di-exec"
 
-    assert "mysql-connector-python" not in runtime_only
-    assert "mysql-connector-python" in migration_only
-    assert "AS migration" in text
+    dockerfile = DOCKERFILE_PATH.read_text(encoding="utf-8")
+    assert "AS migration" not in dockerfile, "stage migrasi terpisah sudah tidak dipakai"
+    assert "COPY --chown=app:app scripts ./scripts" in dockerfile, "skrip harus ikut ke image"
+
+    assert (ROOT / "scripts" / "migrate_mysql_to_sqlite.py").exists()
+
+
+def test_migration_docs_use_docker_exec():
+    """Runbook tidak boleh menyuruh `docker run` image migrasi lagi."""
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    assert "docker exec -u app tuyabot-withdb" in readme
+    assert "--target migration" not in readme

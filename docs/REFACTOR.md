@@ -183,14 +183,10 @@ jumlah koneksi TCP ke device turun (satu polling, banyak pembaca).
 
 ```
 # di host, dari direktori compose
-docker compose stop tuyabot
 mysqldump -u "$MYSQL_USER" -p "$MYSQL_DATABASE" > /root/tuyabot-pre-sqlite.sql   # rollback
 mkdir -p data
-docker compose build
-docker build --target migration -t tuyabot-migration .
-docker run --rm --network host --env-file .env -v "$PWD/data:/app/data" \
-  tuyabot-migration python scripts/migrate_mysql_to_sqlite.py
-docker compose up -d
+docker compose build && docker compose up -d
+docker exec -u app tuyabot-withdb python scripts/migrate_mysql_to_sqlite.py
 ```
 
 Setelah yakin, `MYSQL_*` boleh dihapus dari `.env` dan service MySQL lama boleh dimatikan.
@@ -243,10 +239,11 @@ sqlite3 data/tuyabot.db "VACUUM INTO 'backup/tuyabot-$(date +%F).db'"
 Yang dibawa default: `bot_users` + `bot_air_recipients` (data akses). Log telemetri lama
 tidak ikut — tetap ada di file dump, dan kalau perlu bisa dibawa dengan `--include-logs`.
 
-1. `docker compose stop tuyabot`
-2. `docker compose build` lalu `docker build --target migration -t tuyabot-migration .`
-   (`mysql-connector-python` hanya ada di stage `migration`, bukan image produksi)
-3. `docker run --rm --network host --env-file .env -v "$PWD/data:/app/data" tuyabot-migration python scripts/migrate_mysql_to_sqlite.py`
+1. `mysqldump` di host untuk rollback (bot boleh tetap jalan)
+2. `docker compose build && docker compose up -d`
+3. `docker exec -u app tuyabot-withdb python scripts/migrate_mysql_to_sqlite.py`
+   — dijalankan di container yang sama, tanpa image terpisah dan tanpa downtime.
+   `-u app` wajib agar file DB tetap milik uid 10001
 4. Verifikasi: bandingkan jumlah baris sumber vs tujuan yang dicetak skrip, plus jumlah user
    dan penerima notifikasi di akhir keluaran.
 5. `docker compose up -d`, cek `/api/db/stats`, `/status` di bot, dan tab Pengguna di dashboard.
@@ -377,7 +374,8 @@ Supaya tetap aman kalau `.env` lupa diisi, default di kode untuk `API_HOST` adal
 mendokumentasikan `API_HOST`/`API_PORT`/`SQLITE_PATH`/`TZ`, default bind loopback,
 `read_only`/`cap_drop`/`no-new-privileges`, ketiga volume ada, `HEALTHCHECK` membaca `API_HOST`,
 `entrypoint` melakukan chown lalu `exec setpriv`, `build-essential` tidak bocor ke stage runtime,
-dan `mysql-connector-python` hanya ada di stage `migration`. Tanpa guard ini, satu perubahan
+`mysql-connector-python` ada di requirements runtime (agar migrasi bisa di-`exec`), dan runbook
+tidak lagi menyuruh `docker run` image migrasi. Tanpa guard ini, satu perubahan
 compose bisa membuka dashboard ke publik lagi tanpa ada yang gagal.
 
 ### Yang belum diverifikasi di sini

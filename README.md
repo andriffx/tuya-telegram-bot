@@ -296,39 +296,50 @@ Yang dimigrasikan default-nya hanya **data akses**: `bot_users` (role user runti
 dibawa — itu telemetri lama, dan tetap tersimpan di file dump. Kalau memang ingin membawa
 riwayatnya, tambahkan `--include-logs` di langkah 4.
 
+Migrasi berjalan **di dalam container bot itu sendiri** lewat `docker exec` — tidak ada
+image terpisah, tidak perlu mematikan bot. Skrip `scripts/migrate_mysql_to_sqlite.py` dan
+`mysql-connector-python` sudah ada di image runtime.
+
 ```bash
 # 0. Pre-flight
 docker compose version                 # butuh Compose v2.24+ (sintaks env_file path/required)
 df -h .                                # sisakan minimal 1 GB
-grep -c "^MYSQL_" .env                 # harus > 0; kredensial masih dipakai skrip migrasi
+grep -c "^MYSQL_" .env                 # harus > 0; kredensial dipakai skrip migrasi
 
 # 1. Tag image lama untuk rollback
 docker tag tuyabot-withdb:latest tuyabot-withdb:pre-sqlite
 
-# 2. Hentikan bot dan ambil dump MySQL (rollback data + arsip log lama)
-docker compose stop tuyabot
+# 2. Dump MySQL dari host (cadangan untuk rollback + arsip log lama)
 mkdir -p data backup
 mysqldump -u "$MYSQL_USER" -p "$MYSQL_DATABASE" > /root/tuyabot-pre-sqlite.sql
 ls -lh /root/tuyabot-pre-sqlite.sql
 
-# 3. Build image baru + image khusus migrasi
+# 3. Build dan jalankan image baru
 docker compose build
-docker build --target migration -t tuyabot-migration .
-
-# 4. Salin data akses MySQL → SQLite (butuh akses ke MySQL di 127.0.0.1 host)
-docker run --rm --network host --env-file .env \
-  -v "$PWD/data:/app/data" \
-  tuyabot-migration python scripts/migrate_mysql_to_sqlite.py
-
-#    Keluarannya: tabel | sumber | tujuan | status. Semua harus OK dan exit code 0.
-#    Tambahkan --include-logs di akhir perintah bila ingin ikut membawa riwayat log.
-
-# 5. Nyalakan versi baru
 docker compose up -d
 sleep 20 && docker compose ps          # STATUS harus "healthy"
+
+# 4. Salin data akses MySQL → SQLite, di dalam container yang sedang jalan
+#    (`-u app` penting: tanpa itu file DB akan dimiliki root dan bot tidak bisa menulis)
+docker exec -u app tuyabot-withdb \
+  python scripts/migrate_mysql_to_sqlite.py
+
+#    Keluarannya: tabel | sumber | tujuan | status. Semua harus OK dan exit code 0.
+#    Tambahkan --include-logs bila ingin ikut membawa riwayat log.
+#    Tambahkan --force bila tabel bot_users sudah berisi dan memang ingin ditimpa.
+
+# 5. Verifikasi
+docker exec -u app tuyabot-withdb python -c \
+  "import os; print(os.path.getsize(os.getenv('SQLITE_PATH','data/tuyabot.db')), 'bytes')"
+docker compose logs --tail 20 tuyabot   # tanpa traceback
 ```
 
-Kalau langkah 4 gagal atau jumlah baris tidak sama: **jangan** jalankan langkah 5.
+Kalau langkah 4 keluar dengan exit code bukan 0 atau ada baris selain `OK`: **jangan** lanjut.
+Bot tetap jalan dengan database kosong, jadi tidak ada data yang rusak — perbaiki kredensial
+`MYSQL_*` lalu ulangi langkah 4, atau rollback.
+
+Di Dockhand: buka container `tuyabot-withdb` → Console → jalankan perintah langkah 4 di sana
+(user console sudah `app` bila dijalankan dengan `-u app`, atau tambahkan di awal perintah).
 
 ```bash
 # Rollback
@@ -339,8 +350,8 @@ mysql -u "$MYSQL_USER" -p "$MYSQL_DATABASE" < /root/tuyabot-pre-sqlite.sql   # b
 ```
 
 Setelah seminggu berjalan normal: hapus baris `MYSQL_*` dari `.env`, lalu matikan service MySQL
-lama. Skrip migrasi dan image `tuyabot-migration` hanya dipakai sekali — boleh dihapus
-(`docker rmi tuyabot-migration`).
+lama. Skrip migrasi tetap ada di image (tidak mengganggu); ia hanya melakukan apa pun bila
+dijalankan manual.
 
 ### 5. Command Docker
 

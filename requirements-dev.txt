@@ -6,5 +6,3 @@ httpx>=0.28.1
 ruff>=0.17.0
 # Dipakai tests/test_deploy_config.py untuk memvalidasi compose.
 pyyaml>=6.0
-# Hanya dipakai scripts/migrate_mysql_to_sqlite.py (satu kali, di server).
-mysql-connector-python>=9.0.0

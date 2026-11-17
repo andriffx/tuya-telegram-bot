@@ -4,3 +4,8 @@ tinytuya==1.21.1
 python-dotenv==1.2.4
 fastapi==0.162.7
 uvicorn[standard]==0.54.0
+
+# Hanya dipakai skrip migrasi sekali jalan (scripts/migrate_mysql_to_sqlite.py),
+# yang dijalankan lewat `docker exec` di container yang sama. Bot tidak mengimpor
+# MySQL sama sekali saat berjalan normal. Wheel-nya pure-python (±0,5 MB).
+mysql-connector-python==26.10.0
