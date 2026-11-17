@@ -215,6 +215,47 @@ docker compose ps               # kolom STATUS harus "healthy"
 curl -s http://127.0.0.1:8080/healthz
 ```
 
+### 3b. Uji dulu tanpa menyentuh produksi
+
+Cara paling aman: jalankan **hanya bagian web** dari image baru. Bot Telegram tidak ikut
+start, jadi tidak ada dua proses yang berebut `getUpdates` dengan token yang sama (itu
+penyebab 409 Conflict), dan watchdog tidak aktif.
+
+```bash
+# dari checkout branch, bukan produksi
+git checkout new-patch
+docker build -t tuyabot-test .
+
+# container uji: port 8090, database terpisah, tanpa bot Telegram
+docker run -d --name tuyabot-test --network host \
+  --env-file .env \
+  -e API_HOST=127.0.0.1 -e API_PORT=8090 -e SQLITE_PATH=/app/data/test.db \
+  -v "$PWD/test-data:/app/data" -v "$PWD/test-logs:/app/logs" \
+  tuyabot-test \
+  python -m uvicorn tuyabot.web.app:app --host 127.0.0.1 --port 8090
+
+sleep 5
+curl -s http://127.0.0.1:8090/healthz          # {"status":"ok"}
+docker logs --tail 20 tuyabot-test
+```
+
+Buka dashboard lewat SSH tunnel dari komputer Anda:
+
+```bash
+ssh -L 8090:127.0.0.1:8090 <user>@<vps>
+# lalu buka http://127.0.0.1:8090 di browser
+```
+
+Yang bisa diuji di sini: build image, entrypoint (kepemilikan volume), pembuatan skema
+SQLite, login + cookie, SSE, grafik, dan **kontrol perangkat lewat REST API**
+(`POST /api/devices/lampu/on`) — memakai IP perangkat sungguhan dari `.env`.
+
+Setelah selesai, bersihkan:
+
+```bash
+docker rm -f tuyabot-test && rm -rf test-data test-logs
+```
+
 ### 4. Upgrade dari versi MySQL (sekali saja)
 
 Urutan ini mengubah penyimpanan dari MySQL ke SQLite. Downtime ±2–5 menit (termasuk build).
