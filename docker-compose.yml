@@ -23,8 +23,8 @@ services:
         required: false
 
     # Mount persistent data dari host (JANGAN mount .env di sini agar Docker tidak membuat folder .env otomatis)
-    # Pemilik direktori host harus uid 10001 (user `app` di image):
-    #   sudo mkdir -p logs data && sudo chown -R 10001:10001 logs data
+    # Kepemilikan direktori tidak perlu diurus manual: entrypoint memperbaiki
+    # pemiliknya ke uid 10001 saat container start, lalu turun ke user non-root.
     volumes:
       - ./logs:/app/logs             # persist logs
       - ./data:/app/data             # SQLite (tuyabot.db + backup), persist antar-deploy
@@ -43,6 +43,12 @@ services:
 
     cap_drop:
       - ALL
+    # Minimal untuk entrypoint: chown volume (CHOWN) lalu turun ke uid 10001
+    # memakai setpriv (SETUID + SETGID). Tidak ada capability lain.
+    cap_add:
+      - CHOWN
+      - SETUID
+      - SETGID
     security_opt:
       - no-new-privileges:true
 

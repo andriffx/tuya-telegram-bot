@@ -5,7 +5,6 @@ sebagai root, atau volume persisten hilang sehingga database SQLite ikut terhapu
 saat redeploy.
 """
 
-import re
 from pathlib import Path
 
 import pytest
@@ -34,6 +33,8 @@ def test_database_path_points_to_mounted_volume(service):
 def test_container_is_hardened(service):
     assert service["read_only"] is True
     assert "ALL" in service["cap_drop"]
+    # Hanya capability yang dibutuhkan entrypoint (chown + setpriv).
+    assert set(service["cap_add"]) == {"CHOWN", "SETUID", "SETGID"}
     assert "no-new-privileges:true" in service["security_opt"]
     assert service["logging"]["options"]["max-size"] == "10m"
 
@@ -44,12 +45,21 @@ def test_persistent_volumes_present(service):
         assert expected in volumes, f"volume {expected} hilang"
 
 
-def test_dockerfile_runs_as_non_root_with_healthcheck():
-    text = DOCKERFILE_PATH.read_text(encoding="utf-8")
+def test_entrypoint_fixes_ownership_then_drops_privileges():
+    """Volume yang dimiliki root harus diperbaiki otomatis, bukan oleh operator."""
+    text = (ROOT / "entrypoint.sh").read_text(encoding="utf-8")
 
-    assert re.search(r"^USER app$", text, re.MULTILINE), "container harus jalan sebagai non-root"
-    assert "HEALTHCHECK" in text and "/healthz" in text
-    assert 'CMD ["python", "-m", "tuyabot.main"]' in text
+    for directory in ("/app/logs", "/app/data", "/app/backup"):
+        assert directory in text
+    assert "chown -R" in text
+    assert "setpriv" in text and "--reuid" in text
+    # Wajib exec: kalau tidak, aplikasi jalan sebagai child dan sinyal shutdown
+    # (SIGTERM) tidak sampai ke proses Python.
+    assert text.count("exec ") >= 2
+
+    dockerfile = DOCKERFILE_PATH.read_text(encoding="utf-8")
+    assert 'ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]' in dockerfile
+    assert 'CMD ["python", "-m", "tuyabot.main"]' in dockerfile
 
 
 def test_compiler_kept_out_of_runtime_stage():

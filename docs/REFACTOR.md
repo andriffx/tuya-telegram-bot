@@ -326,8 +326,15 @@ dengan test tetap hijau setelah tiap langkah.
 
 - **builder** (`python:3.11-slim` + `build-essential`): install dependensi ke `/opt/venv`.
 - **runtime** (`python:3.11-slim`, tanpa compiler): copy venv + `src/` + `scripts/`,
-  `PYTHONPATH=/app/src`, `USER app` (uid/gid 10001), `HEALTHCHECK` memanggil `/healthz`,
+  `PYTHONPATH=/app/src`, user `app` (uid/gid 10001), `HEALTHCHECK` memanggil `/healthz`,
   `CMD ["python","-m","tuyabot.main"]`.
+
+Kepemilikan volume tidak lagi jadi urusan operator. `entrypoint.sh` berjalan sebagai root
+selama beberapa milidetik, memperbaiki pemilik `logs/`, `data/`, `backup/` ke uid 10001
+(hanya kalau memang perlu), lalu `exec setpriv --reuid=10001 --regid=10001` sehingga proses
+Python tetap non-root dan `SIGTERM` tetap sampai ke aplikasi. Itu sebabnya image tidak memakai
+`USER app` dan compose memberi tiga capability minimum (`CHOWN`, `SETUID`, `SETGID`);
+`cap_drop: ALL` tetap berlaku untuk sisanya.
 
 `docker-compose.yml`:
 
@@ -338,6 +345,7 @@ dengan test tetap hijau setelah tiap langkah.
 | `read_only` | `true` | container tidak bisa menulis ke filesystemnya sendiri |
 | `tmpfs` | `/tmp` | satu-satunya area tulis sementara |
 | `cap_drop` | `ALL` | tidak ada capability Linux yang dibutuhkan |
+| `cap_add` | `CHOWN`, `SETUID`, `SETGID` | hanya untuk entrypoint: perbaiki kepemilikan volume lalu turun ke uid 10001 |
 | `security_opt` | `no-new-privileges` | cegah eskalasi hak akses |
 | `logging` | `json-file`, 10m × 3 | log container tidak menelan disk VPS |
 | `volumes` | `logs/`, `data/`, `backup/` | persist log, database, hasil backup |

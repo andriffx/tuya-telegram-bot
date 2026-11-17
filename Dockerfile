@@ -45,7 +45,11 @@ COPY --chown=app:app scripts ./scripts
 
 RUN mkdir -p /app/logs /app/data /app/backup && chown -R app:app /app/logs /app/data /app/backup
 
-USER app
+# Tidak memakai USER app: entrypoint perlu root sebentar untuk memperbaiki
+# kepemilikan volume (bind-mount dari host sering milik root), lalu langsung
+# turun ke uid 10001 sebelum aplikasi dijalankan.
+COPY --chown=root:root entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod 0755 /usr/local/bin/entrypoint.sh
 
 EXPOSE 8080
 
@@ -53,4 +57,5 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=25s --retries=3 \
     CMD python -c "import sys,urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=3).status == 200 else 1)"
 
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["python", "-m", "tuyabot.main"]

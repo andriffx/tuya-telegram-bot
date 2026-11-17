@@ -183,11 +183,10 @@ sqlite3 data/tuyabot.db "VACUUM INTO 'backup/tuyabot-$(date +%F).db'"
 ```bash
 cp .env.example .env
 # Edit .env — isi semua konfigurasi
-
-# Direktori data + kepemilikan untuk user non-root di image (uid 10001)
-sudo mkdir -p logs data backup
-sudo chown -R 10001:10001 logs data backup
 ```
+
+Kepemilikan `logs/`, `data/`, dan `backup/` **tidak perlu diurus manual**. Entrypoint
+container memperbaikinya ke uid 10001 saat start, lalu langsung turun ke user non-root.
 
 ### 2. Build & Run
 
@@ -222,8 +221,9 @@ docker compose down -v      # Hapus container + volumes
   reverse proxy di host (nginx-ui/Cloudflare), bukan langsung dari internet.
 - **Container jalan sebagai user non-root (uid 10001)** dan filesystem-nya `read_only`.
   Hanya `logs/`, `data/`, dan `backup/` yang writable — semuanya bind-mount.
-  Kalau `chown` di langkah 1 terlewat, bot gagal membuka database/log: jalankan chown lalu
-  `docker compose restart`.
+  Kepemilikan ketiga direktori diperbaiki otomatis oleh entrypoint saat start, jadi tidak ada
+  langkah `chown` manual. Kalau filesystem menolak `chown` (mis. NFS root squash), entrypoint
+  menulis peringatan dan lanjut; cek izin volume kalau bot gagal membuka database.
 - **Database SQLite** ada di `data/tuyabot.db` (WAL). Backup kapan saja tanpa menghentikan bot:
   `docker compose exec tuyabot python -c "import sqlite3; sqlite3.connect('/app/data/tuyabot.db').execute(\"VACUUM INTO '/app/backup/tuyabot.db'\")"`
 - **Healthcheck** memanggil `/healthz` (tanpa API key, tanpa sentuh database), jadi `docker ps`
