@@ -4,7 +4,7 @@ Jalankan ini untuk mendiagnosis masalah jaringan.
 """
 
 import socket
-import sys
+
 from config import DEVICES
 
 
@@ -32,25 +32,25 @@ def test_device(name: str, info: dict):
 
     ip = info.get("ip", "")
     if not ip:
-        print(f"\n   ⚠️  IP kosong — tidak bisa test koneksi.")
-        print(f"   Jalankan: python -m tinytuya scan")
+        print("\n   ⚠️  IP kosong — tidak bisa test koneksi.")
+        print("   Jalankan: python -m tinytuya scan")
         return
 
     # Test 1: Ping port 6668
-    print(f"\n   🔌 Test TCP port 6668 ...")
+    print("\n   🔌 Test TCP port 6668 ...")
     if test_ping(ip):
-        print(f"   ✅ Port 6668 TERBUKA — perangkat online!")
+        print("   ✅ Port 6668 TERBUKA — perangkat online!")
     else:
-        print(f"   ❌ Port 6668 TIDAK bisa diakses")
-        print(f"\n   🔍 Kemungkinan penyebab:")
-        print(f"      • PC ini dan perangkat beda jaringan WiFi")
-        print(f"      • Perangkat mati atau offline")
-        print(f"      • IP salah (perangkat dapat IP baru dari DHCP)")
-        print(f"      • Firewall/router memblok port 6668")
+        print("   ❌ Port 6668 TIDAK bisa diakses")
+        print("\n   🔍 Kemungkinan penyebab:")
+        print("      • PC ini dan perangkat beda jaringan WiFi")
+        print("      • Perangkat mati atau offline")
+        print("      • IP salah (perangkat dapat IP baru dari DHCP)")
+        print("      • Firewall/router memblok port 6668")
         return
 
     # Test 2: Coba konek pakai tinytuya
-    print(f"\n   🔌 Test tinytuya connection ...")
+    print("\n   🔌 Test tinytuya connection ...")
     try:
         import tinytuya
         d = tinytuya.Device(
@@ -60,13 +60,13 @@ def test_device(name: str, info: dict):
             version=info.get("version", 3.3)
         )
         status = d.status()
-        print(f"   ✅ tinytuya BERHASIL connect!")
+        print("   ✅ tinytuya BERHASIL connect!")
         print(f"   📊 Status: {status}")
     except Exception as e:
         print(f"   ❌ tinytuya GAGAL: {e}")
-        print(f"\n   🔍 Kemungkinan:")
-        print(f"      • Local Key salah")
-        print(f"      • Versi protokol salah (coba 3.1, 3.3, 3.4, 3.5)")
+        print("\n   🔍 Kemungkinan:")
+        print("      • Local Key salah")
+        print("      • Versi protokol salah (coba 3.1, 3.3, 3.4, 3.5)")
 
 
 def main():
@@ -78,7 +78,7 @@ def main():
         print(f"   • {name}: {ip}")
 
     # Test network interface
-    print(f"\n🌐 Network Info:")
+    print("\n🌐 Network Info:")
     try:
         import socket
         hostname = socket.gethostname()
@@ -105,7 +105,7 @@ def main():
    Solusi: jalankan bot di PC/Raspberry Pi di rumah, atau pakai Tuya Cloud API.
 5. Cek apakah port 6668 diblok firewall:
    sudo ufw allow 6668/tcp   (Linux)
-   
+
 """)
 
 

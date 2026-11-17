@@ -8,31 +8,29 @@ import logging
 import os
 import sys
 from datetime import datetime
+
 from telegram import (
-    Update,
-    ReplyKeyboardMarkup,
-    InlineKeyboardMarkup,
     InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    ReplyKeyboardMarkup,
+    Update,
 )
-from telegram.request import HTTPXRequest
 from telegram.ext import (
     Application,
-    CommandHandler,
     CallbackQueryHandler,
+    CommandHandler,
     ContextTypes,
     MessageHandler,
     filters,
 )
+from telegram.request import HTTPXRequest
 
-from typing import Optional
 import config
+import database
+from auth_manager import ADMIN, PUBLIC, ROLE_NAMES, SUPERADMIN, USER, auth
 from config import TELEGRAM_BOT_TOKEN
 from device_service import run_tuya, tuya
-from auth_manager import auth, ROLE_NAMES, PUBLIC, USER, ADMIN, SUPERADMIN
 from rate_limiter import rate_limit
-import database
-
-
 
 # ── Logging ke file + console ──
 handlers: list[logging.Handler] = [logging.StreamHandler()]
@@ -157,9 +155,9 @@ def require_role(min_role: int, action_name: str = "command ini"):
                 )
             elif role == USER and min_role == ADMIN:
                 await update.message.reply_text(
-                    f"⛔ *Admin only*\n\n"
-                    f"Anda adalah *User* — hanya bisa kontrol **AIR**.\n"
-                    f"Kontrol lampu memerlukan role **Admin**.",
+                    "⛔ *Admin only*\n\n"
+                    "Anda adalah *User* — hanya bisa kontrol **AIR**.\n"
+                    "Kontrol lampu memerlukan role **Admin**.",
                     parse_mode="Markdown",
                     reply_markup=_main_keyboard(role),
                 )
@@ -176,10 +174,14 @@ def require_role(min_role: int, action_name: str = "command ini"):
     return decorator
 
 
-public_only   = lambda f: require_role(PUBLIC)(f)
-user_only     = lambda f: require_role(USER)(f)
-admin_only    = lambda f: require_role(ADMIN)(f)
-superadmin_only = lambda f: require_role(SUPERADMIN)(f)
+def public_only(f):
+    return require_role(PUBLIC)(f)
+def user_only(f):
+    return require_role(USER)(f)
+def admin_only(f):
+    return require_role(ADMIN)(f)
+def superadmin_only(f):
+    return require_role(SUPERADMIN)(f)
 
 
 # ═══════════════════════════════════════════════════════
@@ -356,7 +358,7 @@ async def _control_device_command(
 
 
 # ── Air Auto-Off Watchdog (Khusus Role User) ──
-_active_air_watchdog: Optional[asyncio.Task] = None
+_active_air_watchdog: asyncio.Task | None = None
 
 
 def cancel_air_watchdog() -> bool:
@@ -1250,14 +1252,7 @@ async def _callback_notify(query, context, action: str, role: int):
         await query.message.reply_text("⛔ Superadmin only.")
         return
 
-    if action == "menu":
-        await query.message.reply_text(
-            _format_notify_list(),
-            parse_mode="Markdown",
-            reply_markup=_notify_inline(),
-        )
-
-    elif action == "list":
+    if action == "menu" or action == "list":
         await query.message.reply_text(
             _format_notify_list(),
             parse_mode="Markdown",
@@ -1316,7 +1311,7 @@ async def _callback_role_confirm(query, context, target_id: int, role_input: int
 async def _flow_add_user_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
     context.user_data.pop("awaiting_add_user_id", None)
-    role = auth.get_role(update.effective_user.id)
+    auth.get_role(update.effective_user.id)
 
     try:
         target_id = int(text)
@@ -1446,7 +1441,7 @@ async def unknown_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     error = context.error
-    from telegram.error import NetworkError, TimedOut, BadRequest
+    from telegram.error import BadRequest, NetworkError, TimedOut
 
     # Abaikan logging ERROR dan stack trace untuk gangguan koneksi jaringan sementara
     if isinstance(error, (NetworkError, TimedOut)):

@@ -2,10 +2,12 @@
 Controller untuk perangkat Tuya menggunakan tinytuya.
 """
 
+import logging
 import threading
 import time
+
 import tinytuya
-import logging
+
 from config import DEVICES
 
 logger = logging.getLogger(__name__)

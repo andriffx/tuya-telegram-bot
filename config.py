@@ -5,13 +5,12 @@ SEMUA data sensitif dibaca dari environment variables (file .env).
 JANGAN menulis credential langsung di file ini.
 """
 
-import os
 import logging
+import os
+
 from dotenv import load_dotenv
 
 load_dotenv()
-# .env.dockhand dibuat Dockhand saat deploy (berisi nilai asli); prioritas tertinggi.
-load_dotenv(".env.dockhand", override=True)
 logger = logging.getLogger(__name__)
 
 
@@ -76,10 +75,7 @@ def validate_config() -> bool:
 # ── Auth ──
 # Format: ALLOWED_USERS=123456789,987654321
 _allowed_raw = os.getenv("ALLOWED_USERS", "").strip()
-if _allowed_raw:
-    ALLOWED_USERS = [int(x.strip()) for x in _allowed_raw.split(",") if x.strip().isdigit()]
-else:
-    ALLOWED_USERS = []
+ALLOWED_USERS = [int(x.strip()) for x in _allowed_raw.split(",") if x.strip().isdigit()] if _allowed_raw else []
 
 
 # ── MySQL Config (External) ──

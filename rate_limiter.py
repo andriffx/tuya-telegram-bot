@@ -14,11 +14,11 @@ ENV:
     RATE_LIMIT_WINDOW=60   # detik
 """
 
+import logging
 import os
 import time
-import logging
 from collections import defaultdict
-from typing import Dict, List, Callable
+from collections.abc import Callable
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +32,7 @@ LIMITS = {
 }
 
 # In-memory store: {user_id: [timestamp1, timestamp2, ...]}
-_buckets: Dict[int, List[float]] = defaultdict(list)
+_buckets: dict[int, list[float]] = defaultdict(list)
 
 
 def _cleanup(uid: int, now: float) -> int:

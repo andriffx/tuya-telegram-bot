@@ -1,7 +1,9 @@
 import json
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
+
 import database
+
 
 def test_json_migration_process(tmp_path):
     test_json = tmp_path / "users_db.json"

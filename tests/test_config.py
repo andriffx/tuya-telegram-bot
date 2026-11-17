@@ -1,5 +1,5 @@
-import os
 import importlib
+
 
 def test_mysql_config_loaded(monkeypatch):
     monkeypatch.setenv("MYSQL_HOST", "192.168.1.100")

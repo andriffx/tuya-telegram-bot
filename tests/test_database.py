@@ -1,5 +1,5 @@
 from unittest.mock import MagicMock, patch
-import pytest
+
 
 def test_database_crud_operations():
     with patch("database.get_db_connection") as mock_get_conn:
@@ -95,8 +95,9 @@ def test_app_error_logging_and_handler():
         mock_conn.cursor.return_value = mock_cursor
         mock_get_conn.return_value.__enter__.return_value = (mock_conn, mock_cursor)
 
-        import database
         import logging
+
+        import database
 
         # 1. Test direct log_app_error
         res = database.log_app_error(

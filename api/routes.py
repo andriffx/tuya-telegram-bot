@@ -1,12 +1,10 @@
 """REST API routes untuk web dashboard."""
 
-from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException
 
 import database
-from auth_manager import auth
 from api.deps import get_device_names, verify_api_key
-
 from api.schemas import (
     ControlResponse,
     DeviceListResponse,
@@ -14,6 +12,7 @@ from api.schemas import (
     HealthResponse,
     PowerInfoResponse,
 )
+from auth_manager import auth
 from config import DEVICES
 from device_service import run_tuya, tuya
 
@@ -130,7 +129,7 @@ async def get_database_stats():
 
 
 @router.get("/db/power-logs")
-async def get_power_logs(limit: int = 50, device: Optional[str] = None):
+async def get_power_logs(limit: int = 50, device: str | None = None):
     """Ambil data konsumsi daya terbaru dari device_power_logs."""
     limit = max(1, min(limit, 200))
     return database.get_recent_power_logs(device_name=device, limit=limit)
@@ -163,7 +162,7 @@ async def get_error_logs(limit: int = 50):
 
 
 @router.post("/db/cleanup")
-async def cleanup_database(retention_days: Optional[int] = None):
+async def cleanup_database(retention_days: int | None = None):
     """Jalankan pembersihan log database (housekeeping) secara manual."""
     res = database.cleanup_old_logs(retention_days=retention_days)
     return {

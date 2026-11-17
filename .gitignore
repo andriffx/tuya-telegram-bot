@@ -41,3 +41,11 @@ ENV
 # ── OS ──
 .DS_Store
 Thumbs.db
+
+# ── SQLite (rencana migrasi dari MySQL) ──
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+data/

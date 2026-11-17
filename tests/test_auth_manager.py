@@ -1,5 +1,7 @@
 from unittest.mock import patch
+
 import auth_manager
+
 
 def test_auth_manager_env_override(monkeypatch):
     monkeypatch.setattr(auth_manager, "ENV_SUPERADMIN", {999})
@@ -20,7 +22,7 @@ def test_auth_manager_db_down_fallback():
 def test_auth_manager_set_and_remove_user():
     with patch("database.set_user_role", return_value=True) as mock_set, \
          patch("database.remove_user", return_value=True) as mock_remove:
-        
+
         # Non-env user can be set
         assert auth_manager.auth.set_role(55555, auth_manager.USER, added_by=999, added_by_name="Superadmin") is True
         mock_set.assert_called_with(55555, auth_manager.USER, added_by=999, added_by_name="Superadmin")
@@ -31,10 +33,10 @@ def test_auth_manager_set_and_remove_user():
 
 
 def test_auth_manager_air_recipients():
-    with patch("database.get_air_recipients", return_value={101}) as mock_get_recipients, \
-         patch("database.add_air_recipient", return_value=True) as mock_add_recipient, \
+    with patch("database.get_air_recipients", return_value={101}), \
+         patch("database.add_air_recipient", return_value=True), \
          patch("database.get_user_role", return_value=auth_manager.ADMIN):
-        
+
         recipients = auth_manager.auth.get_air_notify_recipient_ids()
         assert recipients == {101}
 

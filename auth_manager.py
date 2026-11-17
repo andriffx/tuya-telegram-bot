@@ -14,9 +14,8 @@ ENV:
     USER_USERS=555,666
 """
 
-import os
 import logging
-from typing import Dict, List, Optional, Set, Tuple
+import os
 
 import database
 
@@ -36,7 +35,7 @@ ROLE_NAMES = {
 }
 
 
-def _parse_ids(key: str) -> Set[int]:
+def _parse_ids(key: str) -> set[int]:
     raw = os.getenv(key, "").strip()
     if not raw:
         return set()
@@ -97,8 +96,8 @@ class AuthManager:
         self,
         target_id: int,
         role: int,
-        added_by: Optional[int] = None,
-        added_by_name: Optional[str] = None,
+        added_by: int | None = None,
+        added_by_name: str | None = None,
     ) -> bool:
         """Set role user di MySQL. Tidak bisa override ENV superadmin."""
         if _env_role(target_id) != PUBLIC:
@@ -111,7 +110,7 @@ class AuthManager:
             return False
         return database.remove_user(target_id)
 
-    def get_superadmin_ids(self) -> Set[int]:
+    def get_superadmin_ids(self) -> set[int]:
         """Return semua user ID dengan role Superadmin (ENV + runtime MySQL)."""
         ids = set(ENV_SUPERADMIN)
         try:
@@ -123,11 +122,11 @@ class AuthManager:
             logger.error("[DATABASE ERROR] Gagal mengambil superadmin IDs dari MySQL: %s", e)
         return ids
 
-    def get_air_notify_recipient_ids(self) -> Set[int]:
+    def get_air_notify_recipient_ids(self) -> set[int]:
         """Admin yang menerima notif saat role User kontrol air (MySQL runtime)."""
         return database.get_air_recipients()
 
-    def list_air_notify_recipients(self) -> List[dict]:
+    def list_air_notify_recipients(self) -> list[dict]:
         """Daftar penerima notif air dengan info role."""
         recipients = database.get_air_recipients()
         rows = []
@@ -140,7 +139,7 @@ class AuthManager:
             })
         return rows
 
-    def list_all_admins(self) -> List[dict]:
+    def list_all_admins(self) -> list[dict]:
         """Semua admin terdaftar (runtime MySQL), untuk referensi saat assign notif."""
         rows = []
         recipients = database.get_air_recipients()
@@ -157,7 +156,7 @@ class AuthManager:
         return rows
 
 
-    def add_air_notify_recipient(self, target_id: int) -> Tuple[bool, str]:
+    def add_air_notify_recipient(self, target_id: int) -> tuple[bool, str]:
         """
         Tambah admin ke daftar penerima notif air (aksi role User).
         Hanya role Admin yang bisa ditambahkan.
@@ -179,7 +178,7 @@ class AuthManager:
             return True, f"Admin `{target_id}` ditambahkan ke notif air."
         return False, "Gagal menambahkan admin ke database MySQL eksternal."
 
-    def remove_air_notify_recipient(self, target_id: int) -> Tuple[bool, str]:
+    def remove_air_notify_recipient(self, target_id: int) -> tuple[bool, str]:
         """Hapus admin dari daftar penerima notif air."""
         recipients = database.get_air_recipients()
         if target_id not in recipients:

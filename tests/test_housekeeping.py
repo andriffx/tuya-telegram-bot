@@ -1,10 +1,12 @@
 import asyncio
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
+
 
 @pytest.mark.asyncio
 async def test_housekeeping_loop_single_iteration():
-    with patch("database.cleanup_old_logs", return_value={"power_logs_deleted": 5}) as mock_cleanup:
+    with patch("database.cleanup_old_logs", return_value={"power_logs_deleted": 5}):
         from run import housekeeping_loop
         # Run housekeeping_loop with cancellation after brief time
         task = asyncio.create_task(housekeeping_loop(interval_hours=1))

@@ -5,18 +5,13 @@ Menggunakan connection pool resmi dari mysql-connector-python dan Pure Direct Qu
 
 import json
 import logging
-import os
 import sys
 import threading
 import traceback
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Dict, Optional, Set
 
-
-import mysql.connector
 from mysql.connector import pooling
-from mysql.connector.errors import Error as MySQLError
 
 from config import MYSQL_CONFIG
 
@@ -24,11 +19,11 @@ logger = logging.getLogger(__name__)
 
 USERS_FILE = Path("users_db.json")
 
-_pool: Optional[pooling.MySQLConnectionPool] = None
+_pool: pooling.MySQLConnectionPool | None = None
 _pool_lock = threading.Lock()
 
 
-def get_pool() -> Optional[pooling.MySQLConnectionPool]:
+def get_pool() -> pooling.MySQLConnectionPool | None:
     """Inisialisasi connection pool secara lazy dan thread-safe."""
     global _pool
     if _pool is not None:
@@ -276,7 +271,7 @@ def migrate_from_json_if_needed() -> None:
 
 # ── Query Langsung: Manajemen User ──
 
-def get_user_role(user_id: int) -> Optional[int]:
+def get_user_role(user_id: int) -> int | None:
     """Ambil role user runtime dari MySQL. Return None jika user tidak ditemukan atau DB error."""
     try:
         with get_db_connection() as (conn, cursor):
@@ -293,8 +288,8 @@ def get_user_role(user_id: int) -> Optional[int]:
 def set_user_role(
     user_id: int,
     role: int,
-    added_by: Optional[int] = None,
-    added_by_name: Optional[str] = None,
+    added_by: int | None = None,
+    added_by_name: str | None = None,
 ) -> bool:
     """Simpan atau perbarui role user di MySQL serta catat siapa yang menambahkan."""
     try:
@@ -303,7 +298,7 @@ def set_user_role(
                 """
                 INSERT INTO bot_users (user_id, role, added_by, added_by_name)
                 VALUES (%s, %s, %s, %s)
-                ON DUPLICATE KEY UPDATE 
+                ON DUPLICATE KEY UPDATE
                     role = VALUES(role),
                     added_by = COALESCE(VALUES(added_by), added_by),
                     added_by_name = COALESCE(VALUES(added_by_name), added_by_name),
@@ -328,7 +323,7 @@ def remove_user(user_id: int) -> bool:
         return False
 
 
-def get_all_runtime_users() -> Dict[int, int]:
+def get_all_runtime_users() -> dict[int, int]:
     """Ambil semua user runtime dari MySQL (user_id -> role)."""
     try:
         with get_db_connection() as (conn, cursor):
@@ -371,7 +366,7 @@ def get_all_runtime_users_details() -> list[dict]:
 
 # ── Query Langsung: Penerima Notif Air ──
 
-def get_air_recipients() -> Set[int]:
+def get_air_recipients() -> set[int]:
     """Ambil semua ID admin penerima notif air dari MySQL."""
     try:
         with get_db_connection() as (conn, cursor):
@@ -439,7 +434,7 @@ def log_power(
     power_w: float,
     voltage_v: float,
     current_a: float,
-    switch_state: Optional[bool],
+    switch_state: bool | None,
     source: str,
 ) -> bool:
     """Catat snapshot konsumsi daya ke tabel device_power_logs."""
@@ -464,9 +459,9 @@ def log_app_error(
     level: str,
     logger_name: str,
     message: str,
-    exception_trace: Optional[str] = None,
-    file_name: Optional[str] = None,
-    line_number: Optional[int] = None,
+    exception_trace: str | None = None,
+    file_name: str | None = None,
+    line_number: int | None = None,
 ) -> bool:
     """Simpan log error aplikasi ke tabel app_error_logs."""
     try:
@@ -567,7 +562,7 @@ def get_recent_app_errors(limit: int = 20) -> list[dict]:
         return []
 
 
-def get_recent_power_logs(device_name: Optional[str] = None, limit: int = 50) -> list[dict]:
+def get_recent_power_logs(device_name: str | None = None, limit: int = 50) -> list[dict]:
     """Ambil data konsumsi daya terbaru dari device_power_logs."""
     try:
         with get_db_connection() as (conn, cursor):
@@ -682,7 +677,7 @@ def get_db_stats() -> dict:
 # ── Housekeeping / Log Retention ──
 
 
-def cleanup_old_logs(retention_days: Optional[int] = None) -> Dict[str, int]:
+def cleanup_old_logs(retention_days: int | None = None) -> dict[str, int]:
     """
     Hapus log lawas (device_power_logs, device_activity_logs, app_error_logs)
     yang lebih tua dari retention_days hari untuk mencegah pembengkakan database.

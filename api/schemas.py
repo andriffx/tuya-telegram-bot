@@ -1,6 +1,6 @@
 """Pydantic schemas untuk REST API dashboard."""
 
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -31,9 +31,9 @@ class DeviceStatusResponse(BaseModel):
     success: bool
     name: str
     online: bool
-    switch_on: Optional[bool] = None
-    dps: Optional[dict[str, Any]] = None
-    message: Optional[str] = None
+    switch_on: bool | None = None
+    dps: dict[str, Any] | None = None
+    message: str | None = None
 
 
 class PowerInfoResponse(BaseModel):
@@ -41,5 +41,5 @@ class PowerInfoResponse(BaseModel):
     power_w: float = 0
     current_a: float = 0
     voltage_v: float = 0
-    switch_on: Optional[bool] = None
-    message: Optional[str] = None
+    switch_on: bool | None = None
+    message: str | None = None

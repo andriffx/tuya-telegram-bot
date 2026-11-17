@@ -1,12 +1,14 @@
-from unittest.mock import patch, MagicMock, AsyncMock
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
+
 
 @pytest.mark.asyncio
 async def test_action_logging_helper():
     with patch("database.log_activity") as mock_log_act, \
          patch("database.log_power") as mock_log_pwr, \
          patch("bot.run_tuya", new_callable=AsyncMock) as mock_tuya:
-        
+
         mock_tuya.return_value = {
             "success": True,
             "power_w": 250.0,

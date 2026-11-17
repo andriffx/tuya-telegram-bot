@@ -48,3 +48,9 @@ tuya-raw.json
 
 .env.example
 .env.dockhand
+
+# ── SQLite & data runtime ──
+*.db
+*.db-wal
+*.db-shm
+*/data/

@@ -1,6 +1,6 @@
 import asyncio
-from unittest.mock import AsyncMock, patch, MagicMock
-from datetime import datetime, timedelta
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 
 import bot
