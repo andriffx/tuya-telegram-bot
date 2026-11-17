@@ -51,3 +51,34 @@ def test_script_targets_all_tables(tmp_path, monkeypatch):
     database.close_connection()
 
     assert set(script.TABLES) <= existing
+
+
+def test_default_scope_is_users_only():
+    """Default memindahkan data akses saja; log telemetri tidak dibawa."""
+    script = _load_script()
+
+    default_tables = script.select_tables(include_logs=False)
+    assert set(default_tables) == {"bot_users", "bot_air_recipients"}
+
+    all_tables = script.select_tables(include_logs=True)
+    assert set(all_tables) == set(script.TABLES)
+    assert "device_power_logs" in all_tables
+
+
+def test_columns_for_user_tables_match_schema(tmp_path, monkeypatch):
+    import tuyabot.storage.sqlite_store as database
+
+    db_file = tmp_path / "scope.db"
+    monkeypatch.setattr(database, "SQLITE_PATH", str(db_file))
+    database.close_connection()
+    database.init_db(migrate_json=False)
+
+    script = _load_script()
+    conn = sqlite3.connect(db_file)
+    try:
+        for table, columns in script.select_tables(include_logs=False).items():
+            actual = [row[1] for row in conn.execute(f"PRAGMA table_info({table})")]
+            assert columns == actual, f"kolom {table} tidak cocok dengan skema"
+    finally:
+        conn.close()
+        database.close_connection()

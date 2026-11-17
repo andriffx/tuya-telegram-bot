@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 """Migrasi data dari MySQL (implementasi lama) ke SQLite (implementasi baru).
 
-Dijalankan SEKALI di server, saat bot berhenti. Skrip ini:
+Dijalankan SEKALI di server, saat bot berhenti.
 
-1. membuat skema SQLite (lewat database.init_db),
-2. menyalin kelima tabel dari MySQL,
-3. membandingkan jumlah baris sumber vs tujuan dan gagal (exit 1) bila beda.
+Default: hanya memindahkan **data akses** — `bot_users` (role user runtime) dan
+`bot_air_recipients` (siapa yang menerima notifikasi air). Log daya/aktivitas/error
+adalah telemetri lama dan tidak dibawa; kalau perlu, pakai `--include-logs`.
 
 Contoh:
 
-    docker compose stop tuyabot
-    python scripts/migrate_mysql_to_sqlite.py --mysql-dump /tmp/tuyabot.sql
-    docker compose up -d
+    docker build --target migration -t tuyabot-migration .
+    docker run --rm --network host --env-file .env -v "$PWD/data:/app/data" \
+        tuyabot-migration python scripts/migrate_mysql_to_sqlite.py
 
 Rollback: kembalikan file `mysqldump` ke MySQL dan jalankan image versi lama.
 """
@@ -23,6 +23,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
+# Semua tabel yang dikenal, beserta kolomnya (urutan harus sama dengan skema SQLite).
 TABLES = {
     "bot_users": ["user_id", "role", "added_by", "added_by_name", "created_at", "updated_at"],
     "bot_air_recipients": ["user_id", "created_at"],
@@ -30,6 +31,16 @@ TABLES = {
     "device_power_logs": ["id", "device_name", "power_w", "voltage_v", "current_a", "switch_state", "source", "created_at"],
     "app_error_logs": ["id", "level", "logger_name", "message", "exception_trace", "file_name", "line_number", "created_at"],
 }
+
+# Data yang wajib dibawa: tanpa ini user kehilangan role dan penerima notifikasi.
+USER_TABLES = ("bot_users", "bot_air_recipients")
+
+
+def select_tables(include_logs: bool) -> dict[str, list[str]]:
+    """Tabel yang akan dimigrasikan. Default hanya data akses."""
+    if include_logs:
+        return dict(TABLES)
+    return {name: TABLES[name] for name in USER_TABLES}
 
 
 def mysql_connection():
@@ -45,13 +56,14 @@ def mysql_connection():
     )
 
 
-def count_rows(cursor, table: str) -> int:
-    cursor.execute(f"SELECT COUNT(*) FROM {table}")
-    return int(cursor.fetchone()[0])
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(description="Migrasi data bot Tuya dari MySQL ke SQLite")
+    parser.add_argument(
+        "--include-logs",
+        action="store_true",
+        help="Ikut memindahkan device_power_logs, device_activity_logs, app_error_logs "
+        "(default: hanya user & penerima notifikasi)",
+    )
     parser.add_argument(
         "--mysql-dump",
         help="Path ke file mysqldump yang sudah dibuat SEBELUM migrasi (untuk dokumentasi/rollback)",
@@ -59,13 +71,15 @@ def main() -> int:
     parser.add_argument(
         "--force",
         action="store_true",
-        help="Timpa tabel tujuan walau sudah berisi data",
+        help="Timpa data tujuan walau tabel bot_users sudah berisi user",
     )
     args = parser.parse_args()
 
     if args.mysql_dump and not Path(args.mysql_dump).exists():
         print(f"[!] File dump tidak ditemukan: {args.mysql_dump}")
         return 2
+
+    tables = select_tables(args.include_logs)
 
     from tuyabot.storage import sqlite_store as database
 
@@ -77,13 +91,18 @@ def main() -> int:
         print("[!] Gagal menyiapkan skema SQLite.")
         return 1
 
-    existing = len(database.get_recent_power_logs(limit=1))
-    if existing and not args.force:
-        print(f"[!] {sqlite_path} sudah berisi data. Pakai --force bila memang ingin menimpa.")
+    existing_users = database.get_all_runtime_users()
+    if existing_users and not args.force:
+        print(f"[!] {sqlite_path} sudah berisi {len(existing_users)} user runtime.")
+        print("    Pakai --force bila memang ingin menimpa dengan data dari MySQL.")
         return 1
 
-    print(f"[*] Sumber : MySQL {os.getenv('MYSQL_HOST', '127.0.0.1')}/{os.getenv('MYSQL_DATABASE', 'tuyabot')}")
-    print(f"[*] Tujuan : SQLite {sqlite_path}")
+    print(f"[*] Sumber  : MySQL {os.getenv('MYSQL_HOST', '127.0.0.1')}/{os.getenv('MYSQL_DATABASE', 'tuyabot')}")
+    print(f"[*] Tujuan  : SQLite {sqlite_path}")
+    scope = "semua tabel (--include-logs)" if args.include_logs else "user & penerima notifikasi"
+    print(f"[*] Cakupan : {scope}")
+    if not args.include_logs:
+        print("[*] Log daya/aktivitas/error TIDAK dimigrasikan (tetap ada di file mysqldump).")
 
     try:
         source = mysql_connection()
@@ -97,8 +116,9 @@ def main() -> int:
         dst = database._connect()
         dst_cursor = dst.cursor()
 
-        for table, columns in TABLES.items():
+        for table, columns in tables.items():
             column_list = ", ".join(columns)
+            placeholders = ", ".join("?" for _ in columns)
             try:
                 src_cursor.execute(f"SELECT {column_list} FROM {table}")
                 rows = src_cursor.fetchall()
@@ -106,7 +126,6 @@ def main() -> int:
                 print(f"[!] Gagal membaca {table} dari MySQL: {e}")
                 return 1
 
-            placeholders = ", ".join("?" for _ in columns)
             dst_cursor.executemany(
                 f"INSERT OR REPLACE INTO {table} ({column_list}) VALUES ({placeholders})",
                 [tuple(row) for row in rows],
@@ -114,8 +133,7 @@ def main() -> int:
             dst.commit()
 
             dst_cursor.execute(f"SELECT COUNT(*) FROM {table}")
-            copied = int(dst_cursor.fetchone()[0])
-            summary.append((table, len(rows), copied))
+            summary.append((table, len(rows), int(dst_cursor.fetchone()[0])))
 
         print("\nRingkasan migrasi:")
         print(f"  {'tabel':24} {'sumber':>8} {'tujuan':>8}  status")
@@ -129,7 +147,10 @@ def main() -> int:
             print("\n[!] Ada tabel dengan jumlah baris berbeda. Jangan jalankan bot dulu.")
             return 1
 
-        print("\n[✓] Migrasi selesai. Jalankan bot, lalu cek /api/db/stats dan satu perintah /status.")
+        users = len(database.get_all_runtime_users())
+        recipients = len(database.get_air_recipients())
+        print(f"\n[✓] Migrasi selesai: {users} user runtime, {recipients} penerima notifikasi air.")
+        print("    Jalankan bot, lalu cek /status di Telegram dan tab Pengguna di dashboard.")
         return 0
     finally:
         try:

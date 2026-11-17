@@ -219,6 +219,11 @@ curl -s http://127.0.0.1:8080/healthz
 
 Urutan ini mengubah penyimpanan dari MySQL ke SQLite. Downtime ±2–5 menit (termasuk build).
 
+Yang dimigrasikan default-nya hanya **data akses**: `bot_users` (role user runtime) dan
+`bot_air_recipients` (siapa yang menerima notifikasi air). Log daya/aktivitas/error tidak
+dibawa — itu telemetri lama, dan tetap tersimpan di file dump. Kalau memang ingin membawa
+riwayatnya, tambahkan `--include-logs` di langkah 4.
+
 ```bash
 # 0. Pre-flight
 docker compose version                 # butuh Compose v2.24+ (sintaks env_file path/required)
@@ -228,7 +233,7 @@ grep -c "^MYSQL_" .env                 # harus > 0; kredensial masih dipakai skr
 # 1. Tag image lama untuk rollback
 docker tag tuyabot-withdb:latest tuyabot-withdb:pre-sqlite
 
-# 2. Hentikan bot dan ambil dump MySQL (rollback data)
+# 2. Hentikan bot dan ambil dump MySQL (rollback data + arsip log lama)
 docker compose stop tuyabot
 mkdir -p data backup
 mysqldump -u "$MYSQL_USER" -p "$MYSQL_DATABASE" > /root/tuyabot-pre-sqlite.sql
@@ -238,12 +243,13 @@ ls -lh /root/tuyabot-pre-sqlite.sql
 docker compose build
 docker build --target migration -t tuyabot-migration .
 
-# 4. Salin data MySQL → SQLite (butuh akses ke MySQL di 127.0.0.1 host)
+# 4. Salin data akses MySQL → SQLite (butuh akses ke MySQL di 127.0.0.1 host)
 docker run --rm --network host --env-file .env \
   -v "$PWD/data:/app/data" \
   tuyabot-migration python scripts/migrate_mysql_to_sqlite.py
 
 #    Keluarannya: tabel | sumber | tujuan | status. Semua harus OK dan exit code 0.
+#    Tambahkan --include-logs di akhir perintah bila ingin ikut membawa riwayat log.
 
 # 5. Nyalakan versi baru
 docker compose up -d

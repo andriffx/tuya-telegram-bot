@@ -240,13 +240,17 @@ sqlite3 data/tuyabot.db "VACUUM INTO 'backup/tuyabot-$(date +%F).db'"
 
 ### Migrasi (dijalankan sekali, di VPS, saat bot berhenti)
 
+Yang dibawa default: `bot_users` + `bot_air_recipients` (data akses). Log telemetri lama
+tidak ikut — tetap ada di file dump, dan kalau perlu bisa dibawa dengan `--include-logs`.
+
 1. `docker compose stop tuyabot`
-2. `python scripts/migrate_mysql_to_sqlite.py` — membaca MySQL lewat env `MYSQL_*` yang ada,
-   membuat `data/tuyabot.db`, menyalin kelima tabel, lalu mencetak jumlah baris
-   sumber vs tujuan.
-3. Verifikasi: bandingkan `SELECT COUNT(*)` per tabel dan 10 baris terakhir `device_power_logs`.
-4. `docker compose up -d`, cek `/api/db/stats` dan satu perintah `/status` di bot.
-5. Simpan `mysqldump` sebelum langkah 2 — rollback = restore dump + jalankan image lama.
+2. `docker compose build` lalu `docker build --target migration -t tuyabot-migration .`
+   (`mysql-connector-python` hanya ada di stage `migration`, bukan image produksi)
+3. `docker run --rm --network host --env-file .env -v "$PWD/data:/app/data" tuyabot-migration python scripts/migrate_mysql_to_sqlite.py`
+4. Verifikasi: bandingkan jumlah baris sumber vs tujuan yang dicetak skrip, plus jumlah user
+   dan penerima notifikasi di akhir keluaran.
+5. `docker compose up -d`, cek `/api/db/stats`, `/status` di bot, dan tab Pengguna di dashboard.
+6. Simpan `mysqldump` sebelum langkah 3 — rollback = restore dump + jalankan image lama.
 
 Dampak downtime: ±2 menit. Tidak ada perubahan skema data, jadi rollback bersih.
 
