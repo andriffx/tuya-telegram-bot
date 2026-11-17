@@ -22,7 +22,7 @@ Keputusan yang sudah diambil:
 | Fase | Isi | Status |
 |---|---|---|
 | 1 | Bug + CI + higiene | **selesai di branch ini** |
-| 2 | Event loop, scheduler, timeout, health | belum |
+| 2 | Event loop, scheduler, timeout, health | **selesai** |
 | 2b | MySQL → SQLite + migrasi data | belum (menunggu review) |
 | 3 | Struktur modular (`src/tuyabot/`) | belum |
 | 4 | Dockerfile & compose produksi | belum |
@@ -84,7 +84,48 @@ mengikuti perubahan import (perilaku yang diuji tetap sama).
 
 ---
 
-## Fase 2 — event loop & scheduler (belum)
+## Fase 2 — selesai
+
+### Hasil implementasi
+
+| File baru | Isi |
+|---|---|
+| `asyncdb.py` | `run_db()` — query MySQL dijalankan di executor sendiri (4 thread), batas waktu 15s, error tetap dilempar ke pemanggil |
+| `state_cache.py` | cache `(device, jenis)` dengan TTL 5s, TTL kegagalan 2s, single-flight per key, `invalidate()` dipanggil setiap habis kontrol |
+| `scheduler.py` | satu loop interval: `cache-warm` 60s, `power-snapshot` 5m, `housekeeping` 24h (tidak jalan saat startup) |
+| `tests/test_asyncdb.py`, `tests/test_state_cache.py`, `tests/test_scheduler.py`, `tests/test_api_health.py`, `tests/test_rate_limiter.py` | 29 test baru |
+
+Perubahan pada file lama:
+
+- `device_service.run_tuya` — `asyncio.wait_for` dengan `TUYA_CALL_TIMEOUT_SECONDS` (25s),
+  executor 2 → 4 thread. Timeout mengembalikan `{"success": False, ...}`, bukan exception,
+  supaya bot dan dashboard tidak menggantung.
+- `tuya_controller` — satu `threading.Lock` global diganti lock per perangkat. Kontrol air dan
+  lampu tidak lagi saling menunggu; I/O ke perangkat yang sama tetap diserialkan.
+- `bot.py` — `_log_control_event`, `_execute_air_auto_off` memakai `run_db`; status/power
+  lewat cache (`get_status`/`get_power`); sampling watchdog memakai `force=True` karena
+  butuh nilai nyata, bukan cache; cache di-invalidasi setelah setiap kontrol.
+- `api/routes.py` — semua endpoint `/db/*` memakai `run_db`; status & daya lewat cache;
+  kontrol meng-invalidasi cache; `/api/health` sekarang benar-benar membaca kondisi
+  (`ok` / `degraded` / `down`) alih-alih selalu `ok`.
+- `api/app.py` — `GET /healthz` tanpa autentikasi dan tanpa menyentuh database.
+- `rate_limiter.py` — bucket user yang tidak aktif dibuang (maksimal sekali per 2 window).
+- `run.py` — dua loop (`power_monitor_loop`, `housekeeping_loop`) dihapus, diganti
+  `build_scheduler()` + `Scheduler`. Shutdown menutup scheduler dan kedua executor.
+
+Dampak yang bisa dirasakan:
+
+- Bot tidak berhenti menjawab saat dashboard memuat riwayat log (query pindah ke thread).
+- Membuka dashboard dari beberapa tab/perangkat tidak lagi memicu pembacaan Tuya berlipat;
+  dalam 5 detik hanya satu pembacaan per jenis data.
+- Status yang dibaca bot/dashboard bisa tertinggal maksimal `STATE_CACHE_TTL_SECONDS` (5s),
+  dan langsung dibuang setelah kontrol apa pun — termasuk auto-off watchdog.
+- Satu-satunya jalur yang tetap menghubungi perangkat setiap kali adalah perintah kontrol
+  dan sampling daya watchdog (`force=True`), karena keduanya butuh kepastian.
+
+Verifikasi: `ruff check .` bersih, `pytest -q` **64 passed** (baseline Fase 1: 35).
+
+### Rencana awal (untuk referensi)
 
 Masalah: panggilan MySQL sinkron di dalam `async def` memblokir satu-satunya event loop,
 sehingga bot berhenti merespons saat dashboard memuat log. Ditambah dua scheduler
