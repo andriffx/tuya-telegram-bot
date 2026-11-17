@@ -1,6 +1,6 @@
 """Menjalankan panggilan database sinkron di luar event loop.
 
-`mysql-connector-python` bersifat blocking. Kalau dipanggil langsung dari `async def`,
+Driver database yang dipakai bersifat blocking. Kalau dipanggil langsung dari `async def`,
 seluruh event loop (bot polling + REST API + scheduler) berhenti sampai query selesai.
 Semua akses database dari kode async harus lewat `run_db`.
 
@@ -40,7 +40,7 @@ async def run_db(
     """Jalankan `fn(*args, **kwargs)` di thread, batasi waktu tunggunya.
 
     Timeout membatasi *pemanggil*, bukan query: thread yang sudah jalan tetap
-    menyelesaikan query-nya sendiri (koneksi MySQL tidak bisa dibatalkan dari sini).
+    menyelesaikan query-nya sendiri (koneksi database tidak bisa dibatalkan dari sini).
     """
     loop = asyncio.get_running_loop()
     limit = DB_CALL_TIMEOUT_SECONDS if timeout is None else timeout

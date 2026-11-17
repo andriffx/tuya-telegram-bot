@@ -32,8 +32,8 @@ if STATIC_DIR.exists():
 async def healthz():
     """Liveness probe: tanpa autentikasi, tanpa cek database.
 
-    Dipakai Docker HEALTHCHECK dan Uptime Kuma. Sengaja tidak menyentuh MySQL
-    maupun perangkat — kalau MySQL mati, bot tetap hidup dan harus tetap dinilai hidup.
+    Dipakai Docker HEALTHCHECK dan Uptime Kuma. Sengaja tidak menyentuh database
+    maupun perangkat — kalau database mati, bot tetap hidup dan harus tetap dinilai hidup.
     """
     return {"status": "ok"}
 

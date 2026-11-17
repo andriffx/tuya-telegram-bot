@@ -23,7 +23,7 @@ Keputusan yang sudah diambil:
 |---|---|---|
 | 1 | Bug + CI + higiene | **selesai di branch ini** |
 | 2 | Event loop, scheduler, timeout, health | **selesai** |
-| 2b | MySQL → SQLite + migrasi data | belum (menunggu review) |
+| 2b | MySQL → SQLite + migrasi data | **selesai** |
 | 3 | Struktur modular (`src/tuyabot/`) | belum |
 | 4 | Dockerfile & compose produksi | belum |
 | 5 | UI | belum |
@@ -153,7 +153,47 @@ jumlah koneksi TCP ke device turun (satu polling, banyak pembaca).
 
 ---
 
-## Fase 2b — MySQL → SQLite (menunggu review)
+## Fase 2b — MySQL → SQLite (selesai)
+
+### Hasil implementasi
+
+- `database.py` ditulis ulang dengan `sqlite3` (stdlib). API publik tidak berubah:
+  `init_db`, `ping`, `get_user_role`, `set_user_role`, `log_activity`, `log_power`,
+  `log_app_error`, `get_recent_*`, `get_db_stats`, `cleanup_old_logs`.
+- Koneksi per thread (`threading.local`), karena `asyncio.to_thread` memakai beberapa thread
+  dan SQLite tidak boleh berbagi satu koneksi antar thread.
+- Pragma: `journal_mode=WAL`, `synchronous=NORMAL`, `busy_timeout`, `foreign_keys=ON`.
+- Terjemahan SQL: `ON DUPLICATE KEY UPDATE` → `ON CONFLICT(user_id) DO UPDATE` (dengan
+  `COALESCE` yang sama untuk `added_by`), `INSERT IGNORE` → `INSERT OR IGNORE`,
+  `NOW() - INTERVAL n DAY` → `datetime('now','localtime', ?)`, `LIMIT %s` → `LIMIT ?`.
+- `get_db_stats()` tetap mengirim `host`/`database` (dipakai dashboard) dan menambah
+  `engine`, `path`, `size_bytes`.
+- `scripts/migrate_mysql_to_sqlite.py`: menyalin 5 tabel, memverifikasi jumlah baris
+  sumber vs tujuan, gagal (exit 1) bila ada yang beda, dan menolak menimpa database yang
+  sudah berisi data tanpa `--force`.
+- `docker-compose.yml`: tambah bind-mount `./data:/app/data`.
+- `mysql-connector-python` keluar dari image produksi; hanya ada di `requirements-dev.txt`
+  untuk skrip migrasi.
+- `tests/test_database.py` ditulis ulang: sekarang memakai file SQLite sementara yang
+  sungguhan, bukan mock koneksi. Semua SQL dieksekusi, termasuk jalur housekeeping.
+- `tests/test_migrate_script.py`: menjaga daftar kolom di skrip migrasi tetap sama dengan
+  skema di `database.py`.
+
+### Langkah deploy (sekali, ±2 menit downtime)
+
+```
+# di host, dari direktori compose
+docker compose stop tuyabot
+mysqldump -u "$MYSQL_USER" -p "$MYSQL_DATABASE" > /root/tuyabot-pre-sqlite.sql   # rollback
+mkdir -p data
+docker compose run --rm tuyabot python scripts/migrate_mysql_to_sqlite.py --mysql-dump /root/tuyabot-pre-sqlite.sql
+docker compose up -d
+```
+
+Setelah yakin, `MYSQL_*` boleh dihapus dari `.env` dan service MySQL lama boleh dimatikan.
+Rollback: hentikan bot, pulihkan dump ke MySQL, jalankan image versi lama.
+
+### Rencana awal (referensi)
 
 Kenapa SQLite cocok di sini: satu proses, satu penulis, ±288 baris/hari untuk power log.
 MySQL menambah satu service, satu kredensial, satu titik gagal, dan `pool_reset_session`

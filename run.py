@@ -32,7 +32,7 @@ HOUSEKEEPING_INTERVAL_HOURS = max(1, int(os.getenv("HOUSEKEEPING_INTERVAL_HOURS"
 
 
 async def record_power_snapshot() -> bool:
-    """Membaca snapshot daya Tuya untuk smart plug air dan menyimpannya ke MySQL."""
+    """Membaca snapshot daya Tuya untuk smart plug air dan menyimpannya ke database."""
     try:
         res = await run_tuya(tuya.get_power_info, "air")
         if not res.get("success"):
@@ -113,11 +113,11 @@ async def run_all():
         logger.error("Konfigurasi tidak lengkap.")
         sys.exit(1)
 
-    # Inisialisasi database MySQL eksternal dan migrasi jika diperlukan
+    # Inisialisasi database SQLite dan migrasi jika diperlukan
     db_ok = database.init_db(migrate_json=True)
     if not db_ok:
         logger.critical(
-            "[DATABASE CRITICAL] Inisialisasi MySQL eksternal gagal. Bot tetap berjalan dengan keterbatasan koneksi database."
+            "[DATABASE CRITICAL] Inisialisasi database gagal. Bot tetap berjalan dengan keterbatasan penyimpanan log."
         )
 
     application = build_application()

@@ -140,7 +140,7 @@ async def _control(name: str, state: bool) -> ControlResponse:
 
 @router.get("/db/stats")
 async def get_database_stats():
-    """Statistik ringkas database MySQL & retensi log."""
+    """Statistik ringkas database & retensi log."""
     return await run_db(database.get_db_stats)
 
 
@@ -160,7 +160,7 @@ async def get_activity_logs(limit: int = 50):
 
 @router.get("/db/users")
 async def get_users_list():
-    """Daftar user ENV & MySQL serta daftar penerima notifikasi air."""
+    """Daftar user ENV & runtime serta daftar penerima notifikasi air."""
     details = await run_db(auth.list_users_detailed)
     recipients = list(await run_db(auth.get_air_notify_recipient_ids))
     return {

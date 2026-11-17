@@ -282,7 +282,7 @@ async def _notify_control_event(
 
 
 async def _log_control_event(user, device_name: str, action: str, result: dict):
-    """Catat aktivitas kontrol perangkat ke MySQL dan snapshot daya jika perangkat air."""
+    """Catat aktivitas kontrol perangkat ke database dan snapshot daya jika perangkat air."""
     try:
         actor_role = auth.get_role(user.id)
         role_name = ROLE_NAMES.get(actor_role, "Publik")
@@ -316,7 +316,7 @@ async def _log_control_event(user, device_name: str, action: str, result: dict):
                     source="action_switch",
                 )
     except Exception as e:
-        logger.warning("[DATABASE WARNING] Gagal mencatat log aktivitas/daya ke MySQL: %s", e)
+        logger.warning("[DATABASE WARNING] Gagal mencatat log aktivitas/daya ke database: %s", e)
 
 
 async def _control_device_callback(
@@ -488,7 +488,7 @@ async def _execute_air_auto_off(context: ContextTypes.DEFAULT_TYPE, user, reason
     user_name = getattr(user, "full_name", None) or (user.get("full_name") if isinstance(user, dict) else "User")
     username = getattr(user, "username", None) or (user.get("username") if isinstance(user, dict) else None)
 
-    # 2. Catat ke MySQL database
+    # 2. Catat ke database
     try:
         msg = (
             f"Auto-off: Pompa mencapai batas maksimal {config.AIR_AUTO_OFF_MAX_MINUTES} menit"
@@ -893,7 +893,7 @@ async def allowuser_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.info("Superadmin %s (%s) set user %s as %s", actor.id, added_by_name, target_id, rname)
     else:
         await update.message.reply_text(
-            "❌ Gagal. User mungkin Superadmin di ENV atau database MySQL sedang bermasalah.",
+            "❌ Gagal. User mungkin Superadmin di ENV atau database sedang bermasalah.",
             parse_mode="Markdown"
         )
 
@@ -1307,7 +1307,7 @@ async def _callback_role_confirm(query, context, target_id: int, role_input: int
         logger.info("Superadmin %s (%s) set user %s as %s", actor.id, added_by_name, target_id, rname)
     else:
         await query.edit_message_text(
-            "❌ Gagal. User mungkin Superadmin di ENV atau database MySQL sedang bermasalah.",
+            "❌ Gagal. User mungkin Superadmin di ENV atau database sedang bermasalah.",
             parse_mode="Markdown",
         )
 

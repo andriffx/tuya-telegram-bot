@@ -1277,12 +1277,12 @@
       try {
         const stats = await api('/api/db/stats');
         document.getElementById('quickDbLogs').textContent = (stats.total_power_logs + stats.total_activity_logs + stats.total_error_logs).toLocaleString() + ' Logs';
-        document.getElementById('quickDbStatus').textContent = stats.connected ? `MySQL: Terhubung (${stats.database})` : 'MySQL: Putus';
+        document.getElementById('quickDbStatus').textContent = stats.connected ? `SQLite: Terhubung (${stats.database})` : 'SQLite: Putus';
         document.getElementById('quickUsersCount').textContent = stats.total_runtime_users + ' User DB';
         document.getElementById('quickRecipientsCount').textContent = stats.total_air_recipients + ' Penerima Notif Air';
 
         document.getElementById('dbConnStatus').textContent = stats.connected ? '🟢 ONLINE' : '🔴 OFFLINE';
-        document.getElementById('dbTargetHost').textContent = `${stats.host} / ${stats.database}`;
+        document.getElementById('dbTargetHost').textContent = `${stats.engine || 'sqlite'} · ${stats.path || stats.database}`;
         document.getElementById('dbRetentionDays').textContent = stats.retention_days + ' Hari';
       } catch (e) {
         console.warn('Gagal memuat db stats overview:', e);

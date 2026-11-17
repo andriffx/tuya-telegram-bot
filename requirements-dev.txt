@@ -4,3 +4,5 @@ pytest>=9.2.0
 pytest-asyncio>=1.5.0
 httpx>=0.28.1
 ruff>=0.17.0
+# Hanya dipakai scripts/migrate_mysql_to_sqlite.py (satu kali, di server).
+mysql-connector-python>=9.0.0

@@ -1,22 +1,25 @@
 import importlib
 
 
-def test_mysql_config_loaded(monkeypatch):
-    monkeypatch.setenv("MYSQL_HOST", "192.168.1.100")
-    monkeypatch.setenv("MYSQL_PORT", "3307")
-    monkeypatch.setenv("MYSQL_USER", "remote_user")
-    monkeypatch.setenv("MYSQL_PASSWORD", "secret123")
-    monkeypatch.setenv("MYSQL_DATABASE", "smarthome")
-    monkeypatch.setenv("MYSQL_POOL_SIZE", "10")
+def test_sqlite_config_loaded(monkeypatch):
+    monkeypatch.setenv("SQLITE_PATH", "/srv/tuyabot/data/tuyabot.db")
+    monkeypatch.setenv("SQLITE_BUSY_TIMEOUT_MS", "7500")
     monkeypatch.setenv("POWER_LOG_INTERVAL_MINUTES", "15")
 
     import config
     importlib.reload(config)
 
-    assert config.MYSQL_CONFIG["host"] == "192.168.1.100"
-    assert config.MYSQL_CONFIG["port"] == 3307
-    assert config.MYSQL_CONFIG["user"] == "remote_user"
-    assert config.MYSQL_CONFIG["password"] == "secret123"
-    assert config.MYSQL_CONFIG["database"] == "smarthome"
-    assert config.MYSQL_CONFIG["pool_size"] == 10
+    assert config.SQLITE_PATH == "/srv/tuyabot/data/tuyabot.db"
+    assert config.SQLITE_BUSY_TIMEOUT_MS == 7500
     assert config.POWER_LOG_INTERVAL_MINUTES == 15
+
+
+def test_sqlite_defaults(monkeypatch):
+    monkeypatch.delenv("SQLITE_PATH", raising=False)
+    monkeypatch.delenv("SQLITE_BUSY_TIMEOUT_MS", raising=False)
+
+    import config
+    importlib.reload(config)
+
+    assert config.SQLITE_PATH == "data/tuyabot.db"
+    assert config.SQLITE_BUSY_TIMEOUT_MS == 5000

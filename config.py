@@ -78,16 +78,10 @@ _allowed_raw = os.getenv("ALLOWED_USERS", "").strip()
 ALLOWED_USERS = [int(x.strip()) for x in _allowed_raw.split(",") if x.strip().isdigit()] if _allowed_raw else []
 
 
-# ── MySQL Config (External) ──
-MYSQL_CONFIG = {
-    "host": os.getenv("MYSQL_HOST", "127.0.0.1"),
-    "port": int(os.getenv("MYSQL_PORT", "3306")),
-    "user": os.getenv("MYSQL_USER", "root"),
-    "password": os.getenv("MYSQL_PASSWORD", ""),
-    "database": os.getenv("MYSQL_DATABASE", "tuyabot"),
-    "pool_size": int(os.getenv("MYSQL_POOL_SIZE", "5")),
-    "connect_timeout": int(os.getenv("MYSQL_CONNECT_TIMEOUT", "5")),
-}
+# ── SQLite Config (embedded) ──
+# Database satu file: tidak ada service, kredensial, atau koneksi jaringan.
+SQLITE_PATH = os.getenv("SQLITE_PATH", "data/tuyabot.db")
+SQLITE_BUSY_TIMEOUT_MS = int(os.getenv("SQLITE_BUSY_TIMEOUT_MS", "5000"))
 
 POWER_LOG_INTERVAL_MINUTES = int(os.getenv("POWER_LOG_INTERVAL_MINUTES", "5"))
 LOG_RETENTION_DAYS = int(os.getenv("LOG_RETENTION_DAYS", "60"))

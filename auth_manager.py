@@ -1,6 +1,6 @@
 """
 Role-based Access Control (RBAC) untuk bot Telegram.
-Menggunakan Pure Direct Query ke database MySQL eksternal (tanpa memory cache).
+Menggunakan query langsung ke database SQLite (tanpa memory cache).
 
 Role:
     0 = PUBLIC   → /start, /help, /whoami (info saja)
@@ -55,15 +55,15 @@ def _env_role(uid: int) -> int:
 
 
 class AuthManager:
-    """Kelola user dan role menggunakan query langsung ke MySQL eksternal."""
+    """Kelola user dan role menggunakan query langsung ke database."""
 
     def __init__(self):
-        logger.info("AuthManager diinisialisasi dengan mode Pure Direct Query ke MySQL.")
+        logger.info("AuthManager diinisialisasi dengan mode query langsung ke database.")
 
     # ── API Publik ──
 
     def get_role(self, user_id: int) -> int:
-        """Ambil role user (ENV override MySQL runtime)."""
+        """Ambil role user (ENV override runtime DB)."""
         env = _env_role(user_id)
         if env != PUBLIC:
             return env
@@ -73,7 +73,7 @@ class AuthManager:
             if role is not None:
                 return role
         except Exception as e:
-            logger.error("[DATABASE ERROR] Gagal memeriksa role user %s dari MySQL: %s", user_id, e)
+            logger.error("[DATABASE ERROR] Gagal memeriksa role user %s dari database: %s", user_id, e)
 
         return PUBLIC
 
@@ -99,19 +99,19 @@ class AuthManager:
         added_by: int | None = None,
         added_by_name: str | None = None,
     ) -> bool:
-        """Set role user di MySQL. Tidak bisa override ENV superadmin."""
+        """Set role user di database. Tidak bisa override ENV superadmin."""
         if _env_role(target_id) != PUBLIC:
             return False  # ENV superadmin tidak bisa diubah runtime
         return database.set_user_role(target_id, role, added_by=added_by, added_by_name=added_by_name)
 
     def remove_user(self, target_id: int) -> bool:
-        """Hapus user dari runtime DB MySQL."""
+        """Hapus user dari runtime DB."""
         if _env_role(target_id) != PUBLIC:
             return False
         return database.remove_user(target_id)
 
     def get_superadmin_ids(self) -> set[int]:
-        """Return semua user ID dengan role Superadmin (ENV + runtime MySQL)."""
+        """Return semua user ID dengan role Superadmin (ENV + runtime DB)."""
         ids = set(ENV_SUPERADMIN)
         try:
             runtime_users = database.get_all_runtime_users()
@@ -119,11 +119,11 @@ class AuthManager:
                 if role == SUPERADMIN:
                     ids.add(uid)
         except Exception as e:
-            logger.error("[DATABASE ERROR] Gagal mengambil superadmin IDs dari MySQL: %s", e)
+            logger.error("[DATABASE ERROR] Gagal mengambil superadmin IDs dari database: %s", e)
         return ids
 
     def get_air_notify_recipient_ids(self) -> set[int]:
-        """Admin yang menerima notif saat role User kontrol air (MySQL runtime)."""
+        """Admin yang menerima notif saat role User kontrol air (runtime DB)."""
         return database.get_air_recipients()
 
     def list_air_notify_recipients(self) -> list[dict]:
@@ -140,7 +140,7 @@ class AuthManager:
         return rows
 
     def list_all_admins(self) -> list[dict]:
-        """Semua admin terdaftar (runtime MySQL), untuk referensi saat assign notif."""
+        """Semua admin terdaftar (runtime DB), untuk referensi saat assign notif."""
         rows = []
         recipients = database.get_air_recipients()
         runtime_users = database.get_all_runtime_users()
@@ -176,7 +176,7 @@ class AuthManager:
         ok = database.add_air_recipient(target_id)
         if ok:
             return True, f"Admin `{target_id}` ditambahkan ke notif air."
-        return False, "Gagal menambahkan admin ke database MySQL eksternal."
+        return False, "Gagal menambahkan admin ke database."
 
     def remove_air_notify_recipient(self, target_id: int) -> tuple[bool, str]:
         """Hapus admin dari daftar penerima notif air."""
@@ -187,7 +187,7 @@ class AuthManager:
         ok = database.remove_air_recipient(target_id)
         if ok:
             return True, f"Admin `{target_id}` dihapus dari notif air."
-        return False, "Gagal menghapus admin dari database MySQL eksternal."
+        return False, "Gagal menghapus admin dari database."
 
     def list_users(self) -> dict:
         env_map = {uid: SUPERADMIN for uid in ENV_SUPERADMIN}

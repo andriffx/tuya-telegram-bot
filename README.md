@@ -68,13 +68,9 @@ DEVICE_AIR_VER=3.5
 # Role-Based Access Control
 SUPERADMIN_USERS=your_telegram_user_id
 
-# Database MySQL Eksternal
-MYSQL_HOST=127.0.0.1
-MYSQL_PORT=3306
-MYSQL_USER=tuya_user
-MYSQL_PASSWORD=your_mysql_password
-MYSQL_DATABASE=tuya_db
-MYSQL_POOL_SIZE=5
+# Database (SQLite, embedded — tidak perlu server)
+SQLITE_PATH=data/tuyabot.db
+SQLITE_BUSY_TIMEOUT_MS=5000
 
 # Interval Monitoring Daya (Menit)
 POWER_LOG_INTERVAL_MINUTES=5
@@ -88,16 +84,35 @@ python run.py
 
 ---
 
-## 🗄️ Database MySQL (Eksternal)
+## 🗄️ Database SQLite (embedded)
 
-Bot ini menggunakan database MySQL eksternal dengan driver resmi `mysql-connector-python` dan pooling koneksi bawaan. Tabel-tabel berikut otomatis dibuat saat pertama kali bot dijalankan:
+Database berupa satu file (`data/tuyabot.db`) berjalan di dalam proses bot — tidak ada
+server, kredensial, atau koneksi jaringan yang perlu dijaga. Praktis: satu proses, satu
+penulis, sekitar 288 baris per hari.
 
-- `bot_users`: Menyimpan daftar user dan role runtime Telegram (`user_id`, `role`, `created_at`, `updated_at`).
-- `bot_air_recipients`: Menyimpan ID admin penerima notifikasi saat role User mengontrol air (`user_id`, `created_at`).
-- `device_activity_logs`: Riwayat aksi switch on/off perangkat (`user_id`, `device_name`, `action`, `status`, `message`, `created_at`).
-- `device_power_logs`: Riwayat metrik daya listrik smart plug (`device_name`, `power_w`, `voltage_v`, `current_a`, `switch_state`, `source`, `created_at`).
+Pragma yang dipakai: `journal_mode=WAL` (pembaca tidak memblokir penulis),
+`synchronous=NORMAL`, `busy_timeout` (default 5000 ms), `foreign_keys=ON`.
 
-> 💡 **Migrasi Otomatis**: Jika Anda sebelumnya memiliki data di `users_db.json`, bot akan otomatis memindahkan data tersebut ke MySQL saat pertama kali start dan mengubah file menjadi `users_db.json.bak`.
+Tabel dibuat otomatis saat pertama kali bot dijalankan:
+
+- `bot_users`: daftar user dan role runtime Telegram (`user_id`, `role`, `created_at`, `updated_at`).
+- `bot_air_recipients`: ID admin penerima notifikasi saat role User mengontrol air (`user_id`, `created_at`).
+- `device_activity_logs`: riwayat aksi switch on/off perangkat (`user_id`, `device_name`, `action`, `status`, `message`, `created_at`).
+- `device_power_logs`: riwayat metrik daya smart plug (`device_name`, `power_w`, `voltage_v`, `current_a`, `switch_state`, `source`, `created_at`).
+- `app_error_logs`: error aplikasi level ERROR/CRITICAL (`level`, `logger_name`, `message`, `exception_trace`, `file_name`, `line_number`, `created_at`).
+
+Backup harian tanpa menghentikan bot:
+
+```bash
+sqlite3 data/tuyabot.db "VACUUM INTO 'backup/tuyabot-$(date +%F).db'"
+```
+
+> 💡 **Pindah dari versi MySQL**: `scripts/migrate_mysql_to_sqlite.py` menyalin kelima tabel
+> dari MySQL ke SQLite dan memverifikasi jumlah baris sumber vs tujuan. Jalankan sekali saat
+> bot berhenti, dengan `MYSQL_*` masih ada di `.env`.
+
+> 💡 **Migrasi `users_db.json` lama**: bila file itu masih ada dan tabel `bot_users` masih
+> kosong, datanya dipindahkan otomatis saat start dan file diubah menjadi `users_db.json.bak`.
 
 
 ---
