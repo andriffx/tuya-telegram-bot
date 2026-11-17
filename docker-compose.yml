@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: tuyabot-withdb
+    container_name: tuya-telegram-bot
     restart: unless-stopped
     # Semua konfigurasi (TZ, API_HOST, API_PORT, SQLITE_PATH, token, dst) dibaca
     # dari file .env — TIDAK ditulis di sini. Satu tempat untuk mengubah semuanya.
