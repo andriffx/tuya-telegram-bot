@@ -3,8 +3,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-import bot
-import config
+import tuyabot.config as config
+import tuyabot.telegram.handlers as bot
 
 
 @pytest.mark.asyncio
@@ -17,7 +17,7 @@ async def test_air_watchdog_starts_only_for_user():
     fake_user.username = "budi"
 
     # 1. Role USER -> watchdog must start
-    with patch("auth_manager.auth.get_role", return_value=bot.USER):
+    with patch("tuyabot.access.roles.auth.get_role", return_value=bot.USER):
         bot._handle_air_watchdog_trigger(
             fake_context, fake_user, "air", "on", {"success": True}
         )
@@ -27,14 +27,14 @@ async def test_air_watchdog_starts_only_for_user():
         assert bot._active_air_watchdog is None
 
     # 2. Role ADMIN -> watchdog should NOT start
-    with patch("auth_manager.auth.get_role", return_value=bot.ADMIN):
+    with patch("tuyabot.access.roles.auth.get_role", return_value=bot.ADMIN):
         bot._handle_air_watchdog_trigger(
             fake_context, fake_user, "air", "on", {"success": True}
         )
         assert bot._active_air_watchdog is None
 
     # 3. Role SUPERADMIN -> watchdog should NOT start
-    with patch("auth_manager.auth.get_role", return_value=bot.SUPERADMIN):
+    with patch("tuyabot.access.roles.auth.get_role", return_value=bot.SUPERADMIN):
         bot._handle_air_watchdog_trigger(
             fake_context, fake_user, "air", "on", {"success": True}
         )
@@ -48,7 +48,7 @@ async def test_air_watchdog_cancels_on_turn_off():
     fake_user = MagicMock()
     fake_user.id = 12345
 
-    with patch("auth_manager.auth.get_role", return_value=bot.USER):
+    with patch("tuyabot.access.roles.auth.get_role", return_value=bot.USER):
         bot._handle_air_watchdog_trigger(
             fake_context, fake_user, "air", "on", {"success": True}
         )
@@ -72,11 +72,11 @@ async def test_execute_air_auto_off_notifications_and_logging():
     fake_user.full_name = "User Budi"
     fake_user.username = "budi"
 
-    with patch("bot.run_tuya", new_callable=AsyncMock) as mock_tuya, \
-         patch("database.log_activity") as mock_log_act, \
-         patch("database.log_power") as mock_log_pwr, \
-         patch("auth_manager.auth.get_superadmin_ids", return_value={999}), \
-         patch("auth_manager.auth.get_air_notify_recipient_ids", return_value={888}):
+    with patch("tuyabot.telegram.handlers.run_tuya", new_callable=AsyncMock) as mock_tuya, \
+         patch("tuyabot.storage.sqlite_store.log_activity") as mock_log_act, \
+         patch("tuyabot.storage.sqlite_store.log_power") as mock_log_pwr, \
+         patch("tuyabot.access.roles.auth.get_superadmin_ids", return_value={999}), \
+         patch("tuyabot.access.roles.auth.get_air_notify_recipient_ids", return_value={888}):
 
         mock_tuya.return_value = {"success": True}
 
@@ -123,9 +123,9 @@ async def test_air_watchdog_detects_idle_and_auto_shuts_off():
     status_response = {"success": True, "status": {"1": True}}
     power_response = {"success": True, "power_w": 120.0}  # idle / leak cycling
 
-    with patch("bot.get_status", new_callable=AsyncMock) as mock_status, \
-         patch("bot.get_power", new_callable=AsyncMock) as mock_power, \
-         patch("bot._execute_air_auto_off", new_callable=AsyncMock) as mock_auto_off, \
+    with patch("tuyabot.telegram.handlers.get_status", new_callable=AsyncMock) as mock_status, \
+         patch("tuyabot.telegram.handlers.get_power", new_callable=AsyncMock) as mock_power, \
+         patch("tuyabot.telegram.handlers._execute_air_auto_off", new_callable=AsyncMock) as mock_auto_off, \
          patch.object(config, "AIR_AUTO_OFF_SAMPLE_COUNT", 3), \
          patch.object(config, "AIR_AUTO_OFF_CHECK_MINUTES", 0.0005):
 

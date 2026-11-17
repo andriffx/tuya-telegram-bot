@@ -4,7 +4,7 @@ import asyncio
 
 import pytest
 
-from scheduler import Scheduler
+from tuyabot.infra.scheduler import Scheduler
 
 
 @pytest.mark.asyncio

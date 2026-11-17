@@ -17,7 +17,7 @@ import time
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from device_service import run_tuya, tuya
+from ..devices.service import run_tuya, tuya
 
 logger = logging.getLogger(__name__)
 

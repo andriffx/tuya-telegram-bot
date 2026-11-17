@@ -7,10 +7,10 @@ import pytest
 @pytest.mark.asyncio
 async def test_housekeeping_job_runs_via_scheduler():
     """Housekeeping sekarang job scheduler, bukan loop sendiri."""
-    import run
-    from scheduler import Scheduler
+    import tuyabot.main as run
+    from tuyabot.infra.scheduler import Scheduler
 
-    with patch("database.cleanup_old_logs", return_value={"power_logs_deleted": 5}) as mock_cleanup:
+    with patch("tuyabot.storage.sqlite_store.cleanup_old_logs", return_value={"power_logs_deleted": 5}) as mock_cleanup:
         scheduler = Scheduler()
         scheduler.add_job("housekeeping", 0.05, run.run_housekeeping, initial_delay=0)
         scheduler.start()
@@ -21,15 +21,15 @@ async def test_housekeeping_job_runs_via_scheduler():
 
 @pytest.mark.asyncio
 async def test_cleanlogs_command():
-    with patch("database.cleanup_old_logs") as mock_cleanup, \
-         patch("auth_manager.auth.get_role", return_value=3):
+    with patch("tuyabot.storage.sqlite_store.cleanup_old_logs") as mock_cleanup, \
+         patch("tuyabot.access.roles.auth.get_role", return_value=3):
         mock_cleanup.return_value = {
             "power_logs_deleted": 10,
             "activity_logs_deleted": 2,
             "error_logs_deleted": 1,
         }
 
-        import bot
+        import tuyabot.telegram.handlers as bot
         fake_update = MagicMock()
         fake_context = MagicMock()
         fake_user = MagicMock()
@@ -48,14 +48,14 @@ async def test_cleanlogs_command():
 
 @pytest.mark.asyncio
 async def test_cleanlogs_callback():
-    with patch("database.cleanup_old_logs") as mock_cleanup:
+    with patch("tuyabot.storage.sqlite_store.cleanup_old_logs") as mock_cleanup:
         mock_cleanup.return_value = {
             "power_logs_deleted": 5,
             "activity_logs_deleted": 1,
             "error_logs_deleted": 0,
         }
 
-        import bot
+        import tuyabot.telegram.handlers as bot
         fake_query = MagicMock()
         fake_query.message.reply_text = AsyncMock()
         fake_context = MagicMock()
@@ -70,7 +70,7 @@ async def test_cleanlogs_callback():
 
 @pytest.mark.asyncio
 async def test_clean_chat_command():
-    import bot
+    import tuyabot.telegram.handlers as bot
     fake_update = MagicMock()
     fake_context = MagicMock()
     fake_update.effective_chat.id = 12345
@@ -89,7 +89,7 @@ async def test_clean_chat_command():
 
 @pytest.mark.asyncio
 async def test_clean_chat_command_fallback_parallel():
-    import bot
+    import tuyabot.telegram.handlers as bot
     fake_update = MagicMock()
     fake_context = MagicMock()
     fake_update.effective_chat.id = 12345
@@ -109,7 +109,7 @@ async def test_clean_chat_command_fallback_parallel():
 @pytest.mark.asyncio
 async def test_callback_users_list():
 
-    import bot
+    import tuyabot.telegram.handlers as bot
     fake_query = MagicMock()
     fake_query.message.reply_text = AsyncMock()
     fake_context = MagicMock()
@@ -123,13 +123,13 @@ async def test_callback_users_list():
 
 @pytest.mark.asyncio
 async def test_help_command_roles():
-    import bot
+    import tuyabot.telegram.handlers as bot
     fake_update = MagicMock()
     fake_context = MagicMock()
     fake_update.message.reply_text = AsyncMock()
 
     # 1. Test PUBLIC role
-    with patch("auth_manager.auth.get_role", return_value=bot.PUBLIC):
+    with patch("tuyabot.access.roles.auth.get_role", return_value=bot.PUBLIC):
         await bot.help_command(fake_update, fake_context)
         public_text = fake_update.message.reply_text.call_args[0][0]
         assert "belum memiliki izin kontrol perangkat" in public_text
@@ -137,7 +137,7 @@ async def test_help_command_roles():
         assert "Lampu —" not in public_text
 
     # 2. Test USER role
-    with patch("auth_manager.auth.get_role", return_value=bot.USER):
+    with patch("tuyabot.access.roles.auth.get_role", return_value=bot.USER):
         await bot.help_command(fake_update, fake_context)
         user_text = fake_update.message.reply_text.call_args[0][0]
         assert "Air" in user_text
@@ -145,7 +145,7 @@ async def test_help_command_roles():
         assert "Manajemen Tuyabot" not in user_text
 
     # 3. Test SUPERADMIN role
-    with patch("auth_manager.auth.get_role", return_value=bot.SUPERADMIN):
+    with patch("tuyabot.access.roles.auth.get_role", return_value=bot.SUPERADMIN):
         await bot.help_command(fake_update, fake_context)
         admin_text = fake_update.message.reply_text.call_args[0][0]
         assert "Manajemen Tuyabot" in admin_text

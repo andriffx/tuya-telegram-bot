@@ -3,9 +3,9 @@
 import pytest
 from fastapi.testclient import TestClient
 
-import api.deps as deps
-import api.routes as routes
-from api.app import app
+import tuyabot.web.deps as deps
+import tuyabot.web.routes as routes
+from tuyabot.web.app import app
 
 KEY = "test-key-fase-2"
 HEADERS = {"X-API-Key": KEY}

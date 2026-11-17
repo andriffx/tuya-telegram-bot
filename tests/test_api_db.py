@@ -3,7 +3,7 @@ from unittest.mock import patch
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from api.app import app
+from tuyabot.web.app import app
 
 
 @pytest.mark.asyncio
@@ -29,8 +29,8 @@ async def test_db_api_stats_endpoint():
         "total_air_recipients": 1,
     }
 
-    with patch("api.deps.DASHBOARD_API_KEY", "secret123"), \
-         patch("database.get_db_stats", return_value=mock_stats):
+    with patch("tuyabot.web.deps.DASHBOARD_API_KEY", "secret123"), \
+         patch("tuyabot.storage.sqlite_store.get_db_stats", return_value=mock_stats):
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
             res = await ac.get("/api/db/stats", headers={"X-API-Key": "secret123"})
             assert res.status_code == 200
@@ -55,8 +55,8 @@ async def test_db_api_power_logs_endpoint():
         }
     ]
 
-    with patch("api.deps.DASHBOARD_API_KEY", "secret123"), \
-         patch("database.get_recent_power_logs", return_value=mock_power):
+    with patch("tuyabot.web.deps.DASHBOARD_API_KEY", "secret123"), \
+         patch("tuyabot.storage.sqlite_store.get_recent_power_logs", return_value=mock_power):
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
             res = await ac.get("/api/db/power-logs?limit=10", headers={"X-API-Key": "secret123"})
             assert res.status_code == 200
@@ -81,8 +81,8 @@ async def test_db_api_activities_endpoint():
         }
     ]
 
-    with patch("api.deps.DASHBOARD_API_KEY", "secret123"), \
-         patch("database.get_recent_activities", return_value=mock_activities):
+    with patch("tuyabot.web.deps.DASHBOARD_API_KEY", "secret123"), \
+         patch("tuyabot.storage.sqlite_store.get_recent_activities", return_value=mock_activities):
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
             res = await ac.get("/api/db/activities?limit=10", headers={"X-API-Key": "secret123"})
             assert res.status_code == 200
@@ -99,9 +99,9 @@ async def test_db_api_users_endpoint():
         "runtime": [{"user_id": 12345, "role": 1, "added_by": 999, "added_by_name": "Admin", "created_at": "2026-09-03"}],
     }
 
-    with patch("api.deps.DASHBOARD_API_KEY", "secret123"), \
-         patch("auth_manager.auth.list_users_detailed", return_value=mock_details), \
-         patch("auth_manager.auth.get_air_notify_recipient_ids", return_value={888}):
+    with patch("tuyabot.web.deps.DASHBOARD_API_KEY", "secret123"), \
+         patch("tuyabot.access.roles.auth.list_users_detailed", return_value=mock_details), \
+         patch("tuyabot.access.roles.auth.get_air_notify_recipient_ids", return_value={888}):
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
             res = await ac.get("/api/db/users", headers={"X-API-Key": "secret123"})
             assert res.status_code == 200
@@ -120,8 +120,8 @@ async def test_db_api_cleanup_endpoint():
         "error_logs_deleted": 1,
     }
 
-    with patch("api.deps.DASHBOARD_API_KEY", "secret123"), \
-         patch("database.cleanup_old_logs", return_value=mock_cleanup):
+    with patch("tuyabot.web.deps.DASHBOARD_API_KEY", "secret123"), \
+         patch("tuyabot.storage.sqlite_store.cleanup_old_logs", return_value=mock_cleanup):
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
             res = await ac.post("/api/db/cleanup", headers={"X-API-Key": "secret123"})
             assert res.status_code == 200

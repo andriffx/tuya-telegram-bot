@@ -5,8 +5,8 @@ import time
 
 import pytest
 
-import asyncdb
-from asyncdb import run_db
+import tuyabot.infra.asyncdb as asyncdb
+from tuyabot.infra.asyncdb import run_db
 
 
 @pytest.mark.asyncio

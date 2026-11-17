@@ -83,7 +83,7 @@ def rate_limit(func: Callable) -> Callable:
     Fungsi yang di-wrap harus menerima (update, context) dan
     bisa mengakses auth_manager untuk cek role.
     """
-    from auth_manager import auth  # lazy import agar tidak circular
+    from .roles import auth  # lazy import agar tidak circular
 
     async def wrapper(update, context):
         uid = update.effective_user.id

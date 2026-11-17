@@ -4,20 +4,20 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException
 
-import database
-from api.deps import get_device_names, verify_api_key
-from api.schemas import (
+from ..access.roles import auth
+from ..config import DEVICES
+from ..devices.service import run_tuya, tuya
+from ..infra.asyncdb import run_db
+from ..infra.state_cache import cache, get_power, get_status
+from ..storage import sqlite_store as database
+from .deps import get_device_names, verify_api_key
+from .schemas import (
     ControlResponse,
     DeviceListResponse,
     DeviceStatusResponse,
     HealthResponse,
     PowerInfoResponse,
 )
-from asyncdb import run_db
-from auth_manager import auth
-from config import DEVICES
-from device_service import run_tuya, tuya
-from state_cache import cache, get_power, get_status
 
 router = APIRouter(prefix="/api", dependencies=[Depends(verify_api_key)])
 

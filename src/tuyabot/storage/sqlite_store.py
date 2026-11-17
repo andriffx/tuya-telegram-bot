@@ -18,7 +18,7 @@ import traceback
 from contextlib import contextmanager
 from pathlib import Path
 
-from config import SQLITE_BUSY_TIMEOUT_MS, SQLITE_PATH
+from ..config import SQLITE_BUSY_TIMEOUT_MS, SQLITE_PATH
 
 logger = logging.getLogger(__name__)
 
@@ -567,7 +567,7 @@ def get_recent_activities(limit: int = 50) -> list[dict]:
 
 def get_db_stats() -> dict:
     """Statistik ringkas database (dipakai dashboard)."""
-    from config import LOG_RETENTION_DAYS
+    from ..config import LOG_RETENTION_DAYS
 
     path = Path(SQLITE_PATH)
     stats = {
@@ -607,7 +607,7 @@ def get_db_stats() -> dict:
 def cleanup_old_logs(retention_days: int | None = None) -> dict[str, int]:
     """Hapus log lebih tua dari retention_days hari."""
     if retention_days is None:
-        from config import LOG_RETENTION_DAYS
+        from ..config import LOG_RETENTION_DAYS
 
         retention_days = LOG_RETENTION_DAYS
 

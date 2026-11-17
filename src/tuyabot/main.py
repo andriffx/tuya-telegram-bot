@@ -11,16 +11,16 @@ import sys
 import uvicorn
 from telegram import Update
 
-import database
-from api.app import app as fastapi_app
-from asyncdb import run_db
-from asyncdb import shutdown as asyncdb_shutdown
-from bot import build_application
-from config import POWER_LOG_INTERVAL_MINUTES, validate_config
-from device_service import run_tuya, tuya
-from device_service import shutdown as device_shutdown
-from scheduler import Scheduler
-from state_cache import warm as warm_state_cache
+from .config import POWER_LOG_INTERVAL_MINUTES, validate_config
+from .devices.service import run_tuya, tuya
+from .devices.service import shutdown as device_shutdown
+from .infra.asyncdb import run_db
+from .infra.asyncdb import shutdown as asyncdb_shutdown
+from .infra.scheduler import Scheduler
+from .infra.state_cache import warm as warm_state_cache
+from .storage import sqlite_store as database
+from .telegram.handlers import build_application
+from .web.app import app as fastapi_app
 
 logger = logging.getLogger(__name__)
 

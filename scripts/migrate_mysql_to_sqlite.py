@@ -21,7 +21,7 @@ import os
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 TABLES = {
     "bot_users": ["user_id", "role", "added_by", "added_by_name", "created_at", "updated_at"],
@@ -67,7 +67,7 @@ def main() -> int:
         print(f"[!] File dump tidak ditemukan: {args.mysql_dump}")
         return 2
 
-    import database
+    from tuyabot.storage import sqlite_store as database
 
     sqlite_path = os.getenv("SQLITE_PATH", "data/tuyabot.db")
     database.SQLITE_PATH = sqlite_path

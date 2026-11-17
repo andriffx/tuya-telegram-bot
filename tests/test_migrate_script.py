@@ -19,7 +19,7 @@ def _load_script():
 
 
 def test_columns_match_sqlite_schema(tmp_path, monkeypatch):
-    import database
+    import tuyabot.storage.sqlite_store as database
 
     db_file = tmp_path / "schema.db"
     monkeypatch.setattr(database, "SQLITE_PATH", str(db_file))
@@ -38,7 +38,7 @@ def test_columns_match_sqlite_schema(tmp_path, monkeypatch):
 
 
 def test_script_targets_all_tables(tmp_path, monkeypatch):
-    import database
+    import tuyabot.storage.sqlite_store as database
 
     monkeypatch.setattr(database, "SQLITE_PATH", str(tmp_path / "t.db"))
     database.close_connection()

@@ -21,7 +21,7 @@ ignore = ["E501", "RUF001", "RUF006", "RUF059", "SIM105"]
 "scan_devices.py" = ["T201"]
 
 [tool.pytest.ini_options]
-pythonpath = ["."]
+pythonpath = ["src", "."]
 testpaths = ["tests"]
 asyncio_default_fixture_loop_scope = "function"
 filterwarnings = ["ignore::DeprecationWarning"]

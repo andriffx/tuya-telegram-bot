@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from api.routes import router
+from .routes import router
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 # Docs Swagger hanya aktif jika explicitly di-enable (hindari expose struktur API)

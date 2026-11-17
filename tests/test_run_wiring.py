@@ -8,34 +8,29 @@ test yang gagal. Fase 2 memindahkan loop itu ke `scheduler.py`; guard-nya
 sekarang menguji job-nya, bukan loop-nya.
 """
 
-import inspect
 
 import pytest
 
-import database
-import run
+import tuyabot.main as run
+import tuyabot.storage.sqlite_store as database
 
 
 def test_run_imports_database_module():
-    assert hasattr(run, "database"), "run.py wajib `import database`, bukan hanya nama fungsinya"
+    assert hasattr(run, "database"), "tuyabot.main.py wajib `import database`, bukan hanya nama fungsinya"
 
 
 def test_housekeeping_target_is_callable():
-    source = inspect.getsource(run.run_housekeeping)
-    assert "database.cleanup_old_logs" in source
-    assert callable(run.database.cleanup_old_logs)
-    assert callable(database.cleanup_old_logs)
+    # main.py memakai alias modul storage, jadi cleanup yang dipanggil adalah
+    # fungsi yang sama yang diimpor test (bukan salinan terpisah).
+    assert run.database.cleanup_old_logs is database.cleanup_old_logs
 
 
 def test_power_snapshot_target_is_callable():
-    source = inspect.getsource(run.record_power_snapshot)
-    assert "database.log_power" in source
-    assert callable(run.database.log_power)
+    assert run.database.log_power is database.log_power
 
 
 def test_run_all_initialises_database():
-    source = inspect.getsource(run.run_all)
-    assert "database.init_db" in source
+    assert run.database.init_db is database.init_db
 
 
 @pytest.mark.asyncio

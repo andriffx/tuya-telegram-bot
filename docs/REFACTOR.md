@@ -24,7 +24,7 @@ Keputusan yang sudah diambil:
 | 1 | Bug + CI + higiene | **selesai di branch ini** |
 | 2 | Event loop, scheduler, timeout, health | **selesai** |
 | 2b | MySQL → SQLite + migrasi data | **selesai** |
-| 3 | Struktur modular (`src/tuyabot/`) | belum |
+| 3 | Struktur modular (`src/tuyabot/`) | **selesai** |
 | 4 | Dockerfile & compose produksi | belum |
 | 5 | UI | belum |
 | 6 | Ops & dokumentasi | belum |
@@ -268,6 +268,53 @@ framework baru. `database.py` tetap satu modul; yang ditambah hanya batas tanggu
 `init_db` tetap `CREATE TABLE IF NOT EXISTS` + migrasi kolom manual. Alembic tidak dipakai:
 tidak ada kebutuhan migrasi berganda, dan menambah dependensi tanpa masalah nyata bukan
 perbaikan.
+
+---
+
+## Fase 3 — struktur modular (selesai)
+
+### Hasil implementasi
+
+```
+src/tuyabot/
+├── main.py                 # dulu run.py
+├── config.py
+├── infra/                  # asyncdb.py, scheduler.py, state_cache.py
+├── devices/                # local.py (tinytuya), service.py (executor+timeout)
+├── storage/                # sqlite_store.py (dulu database.py)
+├── access/                 # roles.py (dulu auth_manager), rate_limit.py (dulu rate_limiter)
+├── telegram/               # handlers.py (dulu bot.py)
+├── web/                    # app.py, routes.py, deps.py, schemas.py
+└── static/index.html
+scripts/                    # scan_devices.py, test_connection.py, migrate_mysql_to_sqlite.py
+```
+
+- Semua perpindahan memakai `git mv`, jadi `git log --follow` tetap melacak riwayat tiap file.
+- Import internal sekarang relatif (`from ..devices.service import run_tuya`), bukan nama modul
+  datar. Nama modul lama tidak lagi bisa diimpor — ini disengaja, supaya tidak ada dua jalan.
+- Entry point: `python -m tuyabot.main` (Docker: `ENV PYTHONPATH=/app/src` + `CMD ["python","-m","tuyabot.main"]`).
+  `pytest` memakai `pythonpath = ["src", "."]`.
+- `api/` dihapus sebagai paket, isinya menjadi `web/`.
+- Test mengimpor modul dengan alias (`import tuyabot.telegram.handlers as bot`) supaya
+  pembacaan test tetap sama, dan semua target `patch(...)` diperbarui ke path paket baru.
+  Dua test yang memeriksa teks sumber (`inspect.getsource`) saya ubah menjadi pemeriksaan
+  identitas fungsi — lebih tahan refactor dan tetap menangkap bug yang sama.
+
+### Yang sengaja belum dipecah
+
+`telegram/handlers.py` masih satu modul (~1.560 baris) berisi command handler, callback,
+menu, dan watchdog air. Memecahnya per fitur adalah pekerjaan terpisah dengan risiko
+tersendiri (banyak state modul global: `_active_air_watchdog`, keyboard, rate limit), dan
+tidak memberi perbaikan perilaku apa pun. Urutan yang saya sarankan kalau nanti dikerjakan:
+`keyboards.py` → `watchdog.py` → `handlers/devices.py` → `handlers/admin.py` → `handlers/menu.py`,
+dengan test tetap hijau setelah tiap langkah.
+
+### Verifikasi
+
+- `ruff check .` bersih, `pytest -q` **75 passed** (jumlah test sama seperti sebelum fase ini —
+  refactor tidak boleh mengubah cakupan).
+- Smoke test di proses baru: `healthz 200 {'status': 'ok'}`, dashboard `/` 200 (55 KB HTML),
+  `/static/index.html` 200 — membuktikan `STATIC_DIR` tetap benar setelah static ikut pindah.
 
 ---
 

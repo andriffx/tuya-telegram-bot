@@ -10,7 +10,7 @@ import sqlite3
 
 import pytest
 
-import database
+import tuyabot.storage.sqlite_store as database
 
 
 @pytest.fixture
@@ -175,7 +175,7 @@ def test_handler_ignores_its_own_database_errors(db):
     record = logging.LogRecord(
         name="database",
         level=logging.ERROR,
-        pathname="database.py",
+        pathname="tuyabot.storage.sqlite_store.py",
         lineno=1,
         msg="[DATABASE ERROR] sesuatu",
         args=(),

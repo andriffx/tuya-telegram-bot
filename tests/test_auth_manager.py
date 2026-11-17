@@ -1,6 +1,6 @@
 from unittest.mock import patch
 
-import auth_manager
+import tuyabot.access.roles as auth_manager
 
 
 def test_auth_manager_env_override(monkeypatch):
@@ -8,20 +8,20 @@ def test_auth_manager_env_override(monkeypatch):
     assert auth_manager.auth.get_role(999) == auth_manager.SUPERADMIN
 
 def test_auth_manager_direct_query():
-    with patch("database.get_user_role") as mock_db_get:
+    with patch("tuyabot.storage.sqlite_store.get_user_role") as mock_db_get:
         mock_db_get.return_value = auth_manager.ADMIN
         assert auth_manager.auth.get_role(12345) == auth_manager.ADMIN
         mock_db_get.assert_called_with(12345)
 
 def test_auth_manager_db_down_fallback():
-    with patch("database.get_user_role") as mock_db_get:
+    with patch("tuyabot.storage.sqlite_store.get_user_role") as mock_db_get:
         mock_db_get.return_value = None  # DB down / not found
         # Fallback to PUBLIC
         assert auth_manager.auth.get_role(88888) == auth_manager.PUBLIC
 
 def test_auth_manager_set_and_remove_user():
-    with patch("database.set_user_role", return_value=True) as mock_set, \
-         patch("database.remove_user", return_value=True) as mock_remove:
+    with patch("tuyabot.storage.sqlite_store.set_user_role", return_value=True) as mock_set, \
+         patch("tuyabot.storage.sqlite_store.remove_user", return_value=True) as mock_remove:
 
         # Non-env user can be set
         assert auth_manager.auth.set_role(55555, auth_manager.USER, added_by=999, added_by_name="Superadmin") is True
@@ -33,9 +33,9 @@ def test_auth_manager_set_and_remove_user():
 
 
 def test_auth_manager_air_recipients():
-    with patch("database.get_air_recipients", return_value={101}), \
-         patch("database.add_air_recipient", return_value=True), \
-         patch("database.get_user_role", return_value=auth_manager.ADMIN):
+    with patch("tuyabot.storage.sqlite_store.get_air_recipients", return_value={101}), \
+         patch("tuyabot.storage.sqlite_store.add_air_recipient", return_value=True), \
+         patch("tuyabot.storage.sqlite_store.get_user_role", return_value=auth_manager.ADMIN):
 
         recipients = auth_manager.auth.get_air_notify_recipient_ids()
         assert recipients == {101}

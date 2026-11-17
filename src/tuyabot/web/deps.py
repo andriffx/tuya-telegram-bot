@@ -5,7 +5,7 @@ import secrets
 
 from fastapi import Header, HTTPException
 
-from config import DEVICES
+from ..config import DEVICES
 
 DASHBOARD_API_KEY = os.getenv("DASHBOARD_API_KEY", "")
 

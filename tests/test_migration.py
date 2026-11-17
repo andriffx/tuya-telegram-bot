@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
-import database
+import tuyabot.storage.sqlite_store as database
 
 
 def test_json_migration_process(tmp_path):
@@ -12,10 +12,10 @@ def test_json_migration_process(tmp_path):
         "air_notify_recipients": [1014915827]
     }))
 
-    with patch("database.USERS_FILE", test_json), \
-         patch("database.set_user_role", return_value=True) as mock_set_user, \
-         patch("database.add_air_recipient", return_value=True) as mock_add_air, \
-         patch("database.get_all_runtime_users", return_value={}):
+    with patch("tuyabot.storage.sqlite_store.USERS_FILE", test_json), \
+         patch("tuyabot.storage.sqlite_store.set_user_role", return_value=True) as mock_set_user, \
+         patch("tuyabot.storage.sqlite_store.add_air_recipient", return_value=True) as mock_add_air, \
+         patch("tuyabot.storage.sqlite_store.get_all_runtime_users", return_value={}):
 
         database.migrate_from_json_if_needed()
 

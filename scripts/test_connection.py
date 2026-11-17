@@ -5,7 +5,7 @@ Jalankan ini untuk mendiagnosis masalah jaringan.
 
 import socket
 
-from config import DEVICES
+from tuyabot.config import DEVICES
 
 
 def test_ping(ip: str, timeout: int = 3) -> bool:

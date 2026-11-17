@@ -8,7 +8,7 @@ import time
 
 import tinytuya
 
-from config import DEVICES
+from ..config import DEVICES
 
 logger = logging.getLogger(__name__)
 

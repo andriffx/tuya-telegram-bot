@@ -79,7 +79,7 @@ POWER_LOG_INTERVAL_MINUTES=5
 ### 4. Jalankan Bot & API Dashboard
 
 ```bash
-python run.py
+PYTHONPATH=src python -m tuyabot.main
 ```
 
 ---
@@ -234,23 +234,51 @@ sudo systemctl status tuyabot
 ```
 tuya-telegram-bot/
 │
-├── bot.py                    # Entry point bot Telegram
-├── tuya_controller.py        # Logic kontrol perangkat Tuya
-├── auth_manager.py           # Role-based access control
-├── rate_limiter.py           # Rate limiting proteksi
-├── config.py                 # Konfigurasi & validasi
+├── src/tuyabot/
+│   ├── main.py                 # Entry point: bot + REST API + scheduler
+│   ├── config.py               # Konfigurasi & validasi
+│   │
+│   ├── infra/                  # Infrastruktur lintas fitur
+│   │   ├── asyncdb.py          # Query database di luar event loop
+│   │   ├── scheduler.py        # Satu loop untuk semua pekerjaan berkala
+│   │   └── state_cache.py      # Cache status perangkat (TTL + single-flight)
+│   │
+│   ├── devices/                # Akses perangkat
+│   │   ├── local.py            # tinytuya: koneksi & DPS, lock per perangkat
+│   │   └── service.py          # Executor + timeout untuk I/O perangkat
+│   │
+│   ├── storage/
+│   │   └── sqlite_store.py     # Skema & query SQLite
+│   │
+│   ├── access/                 # Kontrol akses
+│   │   ├── roles.py            # RBAC (ENV + runtime database)
+│   │   └── rate_limit.py       # Rate limiting per role
+│   │
+│   ├── telegram/
+│   │   └── handlers.py         # Command, callback, menu, watchdog air
+│   │
+│   ├── web/                    # REST API dashboard
+│   │   ├── app.py              # FastAPI app + /healthz
+│   │   ├── routes.py           # Endpoint perangkat, log, database
+│   │   ├── deps.py             # Autentikasi X-API-Key
+│   │   └── schemas.py          # Pydantic models
+│   │
+│   └── static/index.html       # Dashboard
 │
-├── requirements.txt          # Python dependencies
-├── Dockerfile                # Docker image
-├── docker-compose.yml        # Docker orchestration
-├── .dockerignore             # Docker build exclusions
+├── scripts/
+│   ├── scan_devices.py         # Discovery perangkat (sekali saat setup)
+│   ├── test_connection.py      # Uji koneksi ke perangkat
+│   └── migrate_mysql_to_sqlite.py  # Migrasi data sekali jalan
 │
-├── tuyabot.service           # Systemd service file
-├── ecosystem.config.js       # PM2 config (opsional)
-│
-├── .env.example              # Template environment
-├── .gitignore                # Git exclusions
-└── README.md                 # Dokumentasi ini
+├── tests/                      # pytest (unit + integrasi ringan)
+├── docs/REFACTOR.md            # Catatan refactor per fase
+├── requirements.txt            # Dependensi runtime
+├── requirements-dev.txt        # Dependensi dev/CI
+├── pyproject.toml              # Konfigurasi ruff & pytest
+├── Dockerfile                  # Docker image
+├── docker-compose.yml          # Docker orchestration
+├── .github/workflows/ci.yml    # CI: ruff + pytest
+└── .env.example                # Template environment
 ```
 
 ---
@@ -293,7 +321,7 @@ tuya-telegram-bot/
 ### Perangkat tidak terhubung
 
 ```bash
-python test_connection.py
+PYTHONPATH=src python scripts/test_connection.py
 ```
 
 - Pastikan bot & perangkat di **jaringan WiFi yang sama**

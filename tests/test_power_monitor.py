@@ -5,8 +5,8 @@ import pytest
 
 @pytest.mark.asyncio
 async def test_power_monitor_single_iteration():
-    with patch("run.run_tuya", new_callable=AsyncMock) as mock_tuya, \
-         patch("run.database.log_power") as mock_log_power:
+    with patch("tuyabot.main.run_tuya", new_callable=AsyncMock) as mock_tuya, \
+         patch("tuyabot.storage.sqlite_store.log_power") as mock_log_power:
 
         mock_tuya.return_value = {
             "success": True,
@@ -16,7 +16,7 @@ async def test_power_monitor_single_iteration():
             "raw": {"1": True}
         }
 
-        from run import record_power_snapshot
+        from tuyabot.main import record_power_snapshot
         ok = await record_power_snapshot()
 
         assert ok is True or ok is not None

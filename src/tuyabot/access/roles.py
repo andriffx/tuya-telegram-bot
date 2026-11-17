@@ -17,7 +17,7 @@ ENV:
 import logging
 import os
 
-import database
+from ..storage import sqlite_store as database
 
 logger = logging.getLogger(__name__)
 

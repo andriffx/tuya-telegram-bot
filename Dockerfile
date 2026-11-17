@@ -7,6 +7,8 @@ FROM python:3.11-slim
 # Prevent Python from writing pyc files and buffering stdout
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
+# Paket aplikasi ada di src/tuyabot, jadi src harus ada di sys.path
+ENV PYTHONPATH=/app/src
 
 # Install system dependencies (if needed)
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -25,4 +27,4 @@ COPY . .
 
 # Run as root inside container so bind-mounted volumes are writable
 # (Host file ownership is the actual security boundary in single-node Docker)
-CMD ["python", "run.py"]
+CMD ["python", "-m", "tuyabot.main"]

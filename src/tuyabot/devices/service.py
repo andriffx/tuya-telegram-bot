@@ -11,7 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from typing import Any
 
-from tuya_controller import TuyaDeviceController
+from .local import TuyaDeviceController
 
 logger = logging.getLogger(__name__)
 

@@ -4,8 +4,8 @@ import asyncio
 
 import pytest
 
-import state_cache
-from state_cache import DeviceStateCache
+import tuyabot.infra.state_cache as state_cache
+from tuyabot.infra.state_cache import DeviceStateCache
 
 
 class FakeClock:

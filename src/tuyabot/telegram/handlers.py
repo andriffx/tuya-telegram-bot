@@ -25,14 +25,14 @@ from telegram.ext import (
 )
 from telegram.request import HTTPXRequest
 
-import config
-import database
-from asyncdb import run_db
-from auth_manager import ADMIN, PUBLIC, ROLE_NAMES, SUPERADMIN, USER, auth
-from config import TELEGRAM_BOT_TOKEN
-from device_service import run_tuya, tuya
-from rate_limiter import rate_limit
-from state_cache import cache, get_power, get_status
+from .. import config
+from ..access.rate_limit import rate_limit
+from ..access.roles import ADMIN, PUBLIC, ROLE_NAMES, SUPERADMIN, USER, auth
+from ..config import TELEGRAM_BOT_TOKEN
+from ..devices.service import run_tuya, tuya
+from ..infra.asyncdb import run_db
+from ..infra.state_cache import cache, get_power, get_status
+from ..storage import sqlite_store as database
 
 # ── Logging ke file + console ──
 handlers: list[logging.Handler] = [logging.StreamHandler()]
@@ -924,7 +924,7 @@ async def removeuser_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 @superadmin_only
 async def cleanlogs_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Pembersihan manual log database lebih tua dari batas retensi."""
-    from config import LOG_RETENTION_DAYS
+    from ..config import LOG_RETENTION_DAYS
     await update.message.reply_text(f"🧹 Menjalankan pembersihan log lama (> {LOG_RETENTION_DAYS} hari)...")
     res = await asyncio.to_thread(database.cleanup_old_logs)
     total = sum(res.values())
@@ -1206,7 +1206,7 @@ async def _callback_users(query, context, action: str, role: int):
         context.user_data["awaiting_remove_user_id"] = True
 
     elif action == "cleanlogs":
-        from config import LOG_RETENTION_DAYS
+        from ..config import LOG_RETENTION_DAYS
         await query.message.reply_text(f"🧹 Menjalankan pembersihan log lama (> {LOG_RETENTION_DAYS} hari)...")
         res = await asyncio.to_thread(database.cleanup_old_logs)
         total = sum(res.values())
@@ -1486,7 +1486,7 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def build_application():
     """Bangun dan konfigurasi Telegram Application."""
-    from config import validate_config
+    from ..config import validate_config
 
     if not validate_config():
         raise RuntimeError("Konfigurasi tidak lengkap.")

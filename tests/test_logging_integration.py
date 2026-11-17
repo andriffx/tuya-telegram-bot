@@ -5,9 +5,9 @@ import pytest
 
 @pytest.mark.asyncio
 async def test_action_logging_helper():
-    with patch("database.log_activity") as mock_log_act, \
-         patch("database.log_power") as mock_log_pwr, \
-         patch("bot.get_power", new_callable=AsyncMock) as mock_power:
+    with patch("tuyabot.storage.sqlite_store.log_activity") as mock_log_act, \
+         patch("tuyabot.storage.sqlite_store.log_power") as mock_log_pwr, \
+         patch("tuyabot.telegram.handlers.get_power", new_callable=AsyncMock) as mock_power:
 
         mock_power.return_value = {
             "success": True,
@@ -18,7 +18,7 @@ async def test_action_logging_helper():
         }
 
 
-        import bot
+        import tuyabot.telegram.handlers as bot
         fake_user = MagicMock()
         fake_user.id = 12345
         fake_user.full_name = "Test User"

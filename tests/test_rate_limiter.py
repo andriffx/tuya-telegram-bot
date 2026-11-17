@@ -2,7 +2,7 @@
 
 import time
 
-import rate_limiter as rl
+import tuyabot.access.rate_limit as rl
 
 
 def _reset():
