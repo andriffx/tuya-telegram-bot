@@ -1,14 +1,13 @@
-import asyncio
 from unittest.mock import AsyncMock, patch
+
 import pytest
+
 
 @pytest.mark.asyncio
 async def test_power_monitor_single_iteration():
     with patch("run.run_tuya", new_callable=AsyncMock) as mock_tuya, \
-         patch("run.log_power") as mock_log_power:
+         patch("run.database.log_power") as mock_log_power:
 
-
-        
         mock_tuya.return_value = {
             "success": True,
             "power_w": 150.5,

@@ -11,10 +11,10 @@ import sys
 import uvicorn
 from telegram import Update
 
+import database
 from api.app import app as fastapi_app
 from bot import build_application
-from config import validate_config, POWER_LOG_INTERVAL_MINUTES
-from database import init_db, log_power
+from config import POWER_LOG_INTERVAL_MINUTES, validate_config
 from device_service import run_tuya, tuya
 
 logger = logging.getLogger(__name__)
@@ -35,7 +35,7 @@ async def record_power_snapshot() -> bool:
         # DP 1 adalah relay status (on/off) untuk plug air
         switch_state = bool(raw.get("1", False)) if isinstance(raw, dict) and "1" in raw else None
 
-        ok = log_power(
+        ok = database.log_power(
             device_name="air",
             power_w=float(res.get("power_w", 0)),
             voltage_v=float(res.get("voltage_v", 0)),
@@ -111,7 +111,7 @@ async def run_all():
         sys.exit(1)
 
     # Inisialisasi database MySQL eksternal dan migrasi jika diperlukan
-    db_ok = init_db(migrate_json=True)
+    db_ok = database.init_db(migrate_json=True)
     if not db_ok:
         logger.critical(
             "[DATABASE CRITICAL] Inisialisasi MySQL eksternal gagal. Bot tetap berjalan dengan keterbatasan koneksi database."
