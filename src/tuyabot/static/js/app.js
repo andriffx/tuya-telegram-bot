@@ -214,7 +214,9 @@ function renderDeviceState(name, info) {
   set('voltage', Number.isFinite(info.voltage_v) ? `${info.voltage_v.toFixed(1)} V` : '—');
   set('current', Number.isFinite(info.current_a) ? `${info.current_a.toFixed(2)} A` : '—');
   set('age', formatAge(info.status_age_s));
-  set('updated', online ? 'data segar dari cache perangkat' : 'perangkat belum merespons');
+  set('updated', online
+    ? 'data segar dari cache perangkat'
+    : (info.message ? `perangkat tidak merespons: ${info.message}` : 'perangkat belum merespons'));
 }
 
 function renderStrip(info) {
@@ -224,7 +226,7 @@ function renderStrip(info) {
   setText('#strip-air', air.online ? (air.switch_on ? 'Menyala' : 'Mati') : 'Offline');
   setText('#strip-air-meta', `${formatWatt(air.power_w)} · ${formatAge(air.status_age_s)}`);
   setText('#strip-lampu', lampu.online ? (lampu.switch_on ? 'Menyala' : 'Mati') : 'Offline');
-  setText('#strip-lampu-meta', lampu.online ? 'terhubung' : 'belum merespons');
+  setText('#strip-lampu-meta', lampu.online ? 'terhubung' : (lampu.message ? lampu.message : 'belum merespons'));
   setText('#strip-power', formatWatt(air.power_w));
   setText('#strip-power-meta', `arus ${Number.isFinite(air.current_a) ? air.current_a.toFixed(2) : '—'} A · ${Number.isFinite(air.voltage_v) ? air.voltage_v.toFixed(0) : '—'} V`);
 }

@@ -98,11 +98,20 @@ class DeviceStateCache:
         return entry[1] if entry else None
 
     def invalidate(self, device_name: str | None = None) -> None:
-        if device_name is None:
-            self._entries.clear()
-            return
-        for key in [k for k in self._entries if k[0] == device_name]:
-            self._entries.pop(key, None)
+        """Tandai data basi tanpa menghapusnya.
+
+        Menghapus entry membuat `read()` mengembalikan None, dan dashboard
+        melaporkan perangkat "offline" padahal relay baru saja dikontrol.
+        Dengan menandai basi: pembaca berikutnya lewat `get()` akan memuat ulang,
+        sementara `read()` masih menyajikan nilai terakhir sebagai data lama.
+        """
+        keys = list(self._entries) if device_name is None else [
+            k for k in self._entries if k[0] == device_name
+        ]
+        stale_stamp = self._clock() - max(self._ttl, self._error_ttl) - 1
+        for key in keys:
+            _, value = self._entries[key]
+            self._entries[key] = (stale_stamp, value)
 
     def snapshot(self) -> dict[str, Any]:
         """Ringkasan isi cache untuk endpoint readiness."""

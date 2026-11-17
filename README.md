@@ -320,9 +320,14 @@ docker compose up -d
 sleep 20 && docker compose ps          # STATUS harus "healthy"
 
 # 4. Salin data akses MySQL → SQLite, di dalam container yang sedang jalan
-#    (`-u app` penting: tanpa itu file DB akan dimiliki root dan bot tidak bisa menulis)
-docker exec -u app tuyabot-withdb \
-  python scripts/migrate_mysql_to_sqlite.py
+#    Console Dockhand membuka shell sebagai root. Container ini memakai cap_drop ALL,
+#    jadi root di dalamnya TIDAK bisa menulis file milik uid 10001 — SQLite akan
+#    melaporkannya sebagai "attempt to write a readonly database".
+#    Karena itu skrip menurunkan dirinya sendiri ke uid 10001 sebelum menulis:
+docker exec tuyabot-withdb python scripts/migrate_mysql_to_sqlite.py
+
+#    Alternatif eksplisit (sama saja, dipilih sejak awal):
+#    docker exec -u app tuyabot-withdb python scripts/migrate_mysql_to_sqlite.py
 
 #    Keluarannya: tabel | sumber | tujuan | status. Semua harus OK dan exit code 0.
 #    Tambahkan --include-logs bila ingin ikut membawa riwayat log.
@@ -352,6 +357,15 @@ mysql -u "$MYSQL_USER" -p "$MYSQL_DATABASE" < /root/tuyabot-pre-sqlite.sql   # b
 Setelah seminggu berjalan normal: hapus baris `MYSQL_*` dari `.env`, lalu matikan service MySQL
 lama. Skrip migrasi tetap ada di image (tidak mengganggu); ia hanya melakukan apa pun bila
 dijalankan manual.
+
+### Troubleshooting cepat
+
+| Gejala | Penyebab | Solusi |
+|---|---|---|
+| Migrasi gagal: `attempt to write a readonly database` | dijalankan sebagai root di container `cap_drop: ALL` | jalankan seperti langkah 4 (skrip kini turun sendiri ke uid 10001); kalau versi image lama, pakai `docker exec -u app ...` |
+| Dashboard bilang **offline** padahal relay menyala | cache dikosongkan setelah kontrol; nilai baru baru diisi job cache-warm (≤60 dtk) | sudah diperbaiki: `invalidate` menandai basi (nilai terakhir tetap tampil) dan endpoint kontrol langsung memuat ulang status |
+| Dashboard offline terus, bukan sesaat | perangkat memang tidak merespons | kartu sekarang menampilkan alasannya (`timeout`, dll); cek `curl -s -H "X-API-Key: ..." http://127.0.0.1:8080/api/health` |
+| Container `healthy` tapi API 401 di browser | cookie sesi belum ada / kedaluwarsa | login ulang di `/` (sesi 12 jam) |
 
 ### 5. Command Docker
 

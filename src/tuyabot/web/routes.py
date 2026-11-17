@@ -107,6 +107,7 @@ def _live_snapshot() -> dict:
         switch_key = str(DEVICES[name].get("dps_switch", 1))
         devices[name] = {
             "online": bool(status.get("success")),
+            "message": status.get("message"),
             "switch_on": bool(dps.get(switch_key)) if switch_key in dps else None,
             "status_age_s": round(cache.age((name, "status")) or 0, 1),
             "power_w": power.get("power_w") if power.get("success") else None,
@@ -206,6 +207,10 @@ async def _control(name: str, state: bool) -> ControlResponse:
     method = tuya.turn_on if state else tuya.turn_off
     result = await run_tuya(method, name)
     cache.invalidate(name)
+    if result.get("success"):
+        # Isi cache lagi segera: tanpa ini dashboard menampilkan status lama
+        # (atau "offline") sampai job cache-warm berikutnya berjalan.
+        await get_status(name, force=True)
 
     try:
         status_str = "success" if result.get("success") else "failed"

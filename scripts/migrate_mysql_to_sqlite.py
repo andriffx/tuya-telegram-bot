@@ -60,6 +60,62 @@ def mysql_connection():
     )
 
 
+APP_UID = int(os.getenv("APP_UID", "10001"))
+
+
+def _drop_to_app_user() -> None:
+    """Turun dari root ke uid aplikasi sebelum menyentuh database.
+
+    Dockhand membuka console container sebagai root. Container produksi memakai
+    `cap_drop: ALL`, jadi root di sini tidak punya CAP_DAC_OVERRIDE dan tidak bisa
+    menulis file milik uid 10001 (SQLite melaporkannya sebagai
+    "attempt to write a readonly database"). Dengan menurunkan diri sendiri,
+    perintah tetap bisa dijalankan apa adanya dari console, dan file DB tetap
+    dimiliki user aplikasi.
+    """
+    if os.geteuid() != 0:
+        return
+    print(f"[*] Berjalan sebagai root; turun ke uid {APP_UID} agar file DB tetap milik aplikasi.")
+    try:
+        os.setgroups([])
+        os.setgid(APP_UID)
+        os.setuid(APP_UID)
+    except OSError as exc:
+        print(f"[!] Gagal turun ke uid {APP_UID}: {exc}")
+        print("    Jalankan langsung sebagai user aplikasi:")
+        print("      docker exec -u app tuyabot-withdb python scripts/migrate_mysql_to_sqlite.py")
+        raise SystemExit(3) from exc
+
+
+def _preflight_writable(path: str) -> str | None:
+    """Pastikan file/tujuan SQLite benar-benar bisa ditulis proses ini.
+
+    Container produksi memakai `cap_drop: ALL`, jadi root di dalam container
+    TIDAK punya CAP_DAC_OVERRIDE: ia tidak bisa menulis file milik uid 10001.
+    Tanpa pemeriksaan ini, kegagalan muncul sebagai
+    `sqlite3.OperationalError: attempt to write a readonly database` yang
+    membingungkan. Cek dengan menulis probe file, bukan `os.access`, karena
+    `os.access` menjawab menurut uid root dan menyesatkan di kondisi ini.
+    """
+    target = Path(path)
+    directory = target.parent if str(target.parent) else Path(".")
+    try:
+        directory.mkdir(parents=True, exist_ok=True)
+        probe = directory / f".write-probe-{os.getpid()}"
+        probe.write_text("ok", encoding="utf-8")
+        probe.unlink()
+    except OSError as exc:
+        return f"direktori {directory} tidak bisa ditulis ({exc.strerror or exc})"
+
+    if target.exists():
+        try:
+            with target.open("ab"):
+                pass
+        except OSError as exc:
+            return f"file {target} tidak bisa ditulis ({exc.strerror or exc})"
+    return None
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Migrasi data bot Tuya dari MySQL ke SQLite")
     parser.add_argument(
@@ -90,6 +146,19 @@ def main() -> int:
     sqlite_path = os.getenv("SQLITE_PATH", "data/tuyabot.db")
     database.SQLITE_PATH = sqlite_path
     database.close_connection()
+
+    _drop_to_app_user()
+    problem = _preflight_writable(sqlite_path)
+    if problem:
+        print(f"[!] Database SQLite tidak bisa ditulis: {problem}")
+        print(f"    Path   : {Path(sqlite_path).resolve()}")
+        if os.geteuid() == 0:
+            print("    Anda berjalan sebagai root DI DALAM container. Container ini memakai")
+            print("    cap_drop ALL, sehingga root tidak boleh menulis file milik uid 10001.")
+            print("    Jalankan sebagai user aplikasi (pilih salah satu):")
+            print("      docker exec -u app tuyabot-withdb python scripts/migrate_mysql_to_sqlite.py")
+            print("      setpriv --reuid=10001 --regid=10001 --clear-groups python scripts/migrate_mysql_to_sqlite.py")
+        return 3
 
     if not database.init_db(migrate_json=False):
         print("[!] Gagal menyiapkan skema SQLite.")

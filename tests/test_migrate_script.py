@@ -5,8 +5,11 @@ salah kolom dan baru ketahuan saat dijalankan di server (saat bot sudah berhenti
 """
 
 import importlib.util
+import os
 import sqlite3
 from pathlib import Path
+
+import pytest
 
 SCRIPT_PATH = Path(__file__).resolve().parent.parent / "scripts" / "migrate_mysql_to_sqlite.py"
 
@@ -82,3 +85,25 @@ def test_columns_for_user_tables_match_schema(tmp_path, monkeypatch):
     finally:
         conn.close()
         database.close_connection()
+
+
+def test_preflight_accepts_writable_directory(tmp_path):
+    script = _load_script()
+    db = tmp_path / "sub" / "tuyabot.db"
+    assert script._preflight_writable(str(db)) is None
+    assert (tmp_path / "sub").is_dir()
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root mengabaikan permission bit")
+def test_preflight_rejects_readonly_directory(tmp_path):
+    """Kasus nyata di container: cap_drop ALL membuat root tak bisa menulis."""
+    locked = tmp_path / "ro"
+    locked.mkdir()
+    locked.chmod(0o500)
+    try:
+        script = _load_script()
+        problem = script._preflight_writable(str(locked / "tuyabot.db"))
+        assert problem is not None
+        assert "tidak bisa ditulis" in problem
+    finally:
+        locked.chmod(0o700)

@@ -134,13 +134,73 @@ def test_snapshot_reports_age_and_success():
     asyncio.run(run())
 
 
-def test_invalidate_single_device():
+@pytest.mark.asyncio
+async def test_invalidate_single_device_marks_only_that_device_stale():
     clock = FakeClock()
     cache = DeviceStateCache(ttl_seconds=60, clock=clock)
     cache._entries[("air", "status")] = (0.0, {"success": True})
     cache._entries[("lampu", "status")] = (0.0, {"success": True})
 
+    calls = {"air": 0, "lampu": 0}
+
+    def loader(name):
+        async def run():
+            calls[name] += 1
+            return {"success": True}
+        return run
+
     cache.invalidate("air")
 
-    assert cache.last_result(("air", "status")) is None
+    # Keduanya masih terbaca (nilai terakhir disajikan ke dashboard)...
+    assert cache.last_result(("air", "status")) is not None
     assert cache.last_result(("lampu", "status")) is not None
+
+    # ...tapi hanya perangkat yang di-invalidate yang dimuat ulang.
+    await cache.get(("air", "status"), loader("air"))
+    await cache.get(("lampu", "status"), loader("lampu"))
+    assert calls["air"] == 1
+    assert calls["lampu"] == 0
+
+
+@pytest.mark.asyncio
+async def test_invalidate_keeps_last_value_readable_but_marks_stale():
+    """Regresi: setelah kontrol perangkat, dashboard sempat melaporkan 'offline'.
+
+    `invalidate` dulu menghapus entry, sehingga `read()` mengembalikan None dan
+    UI menganggap perangkat offline padahal relay baru saja dinyalakan.
+    """
+    clock = FakeClock()
+    cache = DeviceStateCache(ttl_seconds=60, clock=clock)
+    calls = []
+
+    async def loader():
+        calls.append(1)
+        return {"success": True, "status": {"1": len(calls) == 1}}
+
+    await cache.get(("lampu", "status"), loader)
+    cache.invalidate("lampu")
+
+    # Masih terbaca (dipakai SSE/dashboard), tapi ditandai basi.
+    assert cache.read("lampu", "status") is not None
+    assert cache.read("lampu", "status")["status"] == {"1": True}
+
+    # Pembacaan berikutnya memuat ulang dari perangkat.
+    refreshed = await cache.get(("lampu", "status"), loader)
+    assert len(calls) == 2
+    assert refreshed["status"] == {"1": False}
+
+
+@pytest.mark.asyncio
+async def test_invalidate_all_keeps_values():
+    clock = FakeClock()
+    cache = DeviceStateCache(ttl_seconds=60, clock=clock)
+
+    async def loader():
+        return {"success": True}
+
+    await cache.get(("air", "status"), loader)
+    await cache.get(("lampu", "status"), loader)
+    cache.invalidate()
+
+    assert cache.read("air", "status") is not None
+    assert cache.read("lampu", "status") is not None
