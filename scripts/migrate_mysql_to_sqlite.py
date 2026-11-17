@@ -11,8 +11,8 @@ adalah telemetri lama dan tidak dibawa; kalau perlu, pakai `--include-logs`.
 
 Contoh (dari host, container bot sudah jalan):
 
-    docker exec -u app tuyabot-withdb python scripts/migrate_mysql_to_sqlite.py
-    docker exec -u app tuyabot-withdb python scripts/migrate_mysql_to_sqlite.py --include-logs
+    docker exec -u app tuya-telegram-bot python scripts/migrate_mysql_to_sqlite.py
+    docker exec -u app tuya-telegram-bot python scripts/migrate_mysql_to_sqlite.py --include-logs
 
 `-u app` wajib: tanpa itu perintah jalan sebagai root dan file DB jadi milik root,
 sehingga bot (uid 10001) tidak bisa menulis.
@@ -83,7 +83,7 @@ def _drop_to_app_user() -> None:
     except OSError as exc:
         print(f"[!] Gagal turun ke uid {APP_UID}: {exc}")
         print("    Jalankan langsung sebagai user aplikasi:")
-        print("      docker exec -u app tuyabot-withdb python scripts/migrate_mysql_to_sqlite.py")
+        print("      docker exec -u app tuya-telegram-bot python scripts/migrate_mysql_to_sqlite.py")
         raise SystemExit(3) from exc
 
 
@@ -156,7 +156,7 @@ def main() -> int:
             print("    Anda berjalan sebagai root DI DALAM container. Container ini memakai")
             print("    cap_drop ALL, sehingga root tidak boleh menulis file milik uid 10001.")
             print("    Jalankan sebagai user aplikasi (pilih salah satu):")
-            print("      docker exec -u app tuyabot-withdb python scripts/migrate_mysql_to_sqlite.py")
+            print("      docker exec -u app tuya-telegram-bot python scripts/migrate_mysql_to_sqlite.py")
             print("      setpriv --reuid=10001 --regid=10001 --clear-groups python scripts/migrate_mysql_to_sqlite.py")
         return 3
 

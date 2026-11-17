@@ -306,8 +306,9 @@ docker compose version                 # butuh Compose v2.24+ (sintaks env_file 
 df -h .                                # sisakan minimal 1 GB
 grep -c "^MYSQL_" .env                 # harus > 0; kredensial dipakai skrip migrasi
 
-# 1. Tag image lama untuk rollback
-docker tag tuyabot-withdb:latest tuyabot-withdb:pre-sqlite
+# 1. Tag image lama untuk rollback (nama image diambil dari container, tidak ditebak)
+IMAGE=$(docker inspect -f '{{.Config.Image}}' tuya-telegram-bot)
+docker tag "$IMAGE" "$IMAGE-pre-sqlite"
 
 # 2. Dump MySQL dari host (cadangan untuk rollback + arsip log lama)
 mkdir -p data backup
@@ -324,17 +325,17 @@ sleep 20 && docker compose ps          # STATUS harus "healthy"
 #    jadi root di dalamnya TIDAK bisa menulis file milik uid 10001 — SQLite akan
 #    melaporkannya sebagai "attempt to write a readonly database".
 #    Karena itu skrip menurunkan dirinya sendiri ke uid 10001 sebelum menulis:
-docker exec tuyabot-withdb python scripts/migrate_mysql_to_sqlite.py
+docker exec tuya-telegram-bot python scripts/migrate_mysql_to_sqlite.py
 
 #    Alternatif eksplisit (sama saja, dipilih sejak awal):
-#    docker exec -u app tuyabot-withdb python scripts/migrate_mysql_to_sqlite.py
+#    docker exec -u app tuya-telegram-bot python scripts/migrate_mysql_to_sqlite.py
 
 #    Keluarannya: tabel | sumber | tujuan | status. Semua harus OK dan exit code 0.
 #    Tambahkan --include-logs bila ingin ikut membawa riwayat log.
 #    Tambahkan --force bila tabel bot_users sudah berisi dan memang ingin ditimpa.
 
 # 5. Verifikasi
-docker exec -u app tuyabot-withdb python -c \
+docker exec -u app tuya-telegram-bot python -c \
   "import os; print(os.path.getsize(os.getenv('SQLITE_PATH','data/tuyabot.db')), 'bytes')"
 docker compose logs --tail 20 tuyabot   # tanpa traceback
 ```
@@ -343,13 +344,13 @@ Kalau langkah 4 keluar dengan exit code bukan 0 atau ada baris selain `OK`: **ja
 Bot tetap jalan dengan database kosong, jadi tidak ada data yang rusak — perbaiki kredensial
 `MYSQL_*` lalu ulangi langkah 4, atau rollback.
 
-Di Dockhand: buka container `tuyabot-withdb` → Console → jalankan perintah langkah 4 di sana
+Di Dockhand: buka container `tuya-telegram-bot` → Console → jalankan perintah langkah 4 di sana
 (user console sudah `app` bila dijalankan dengan `-u app`, atau tambahkan di awal perintah).
 
 ```bash
 # Rollback
 docker compose down
-docker tag tuyabot-withdb:pre-sqlite tuyabot-withdb:latest
+docker tag "$IMAGE-pre-sqlite" "$IMAGE"
 docker compose up -d
 mysql -u "$MYSQL_USER" -p "$MYSQL_DATABASE" < /root/tuyabot-pre-sqlite.sql   # bila data perlu dipulihkan
 ```

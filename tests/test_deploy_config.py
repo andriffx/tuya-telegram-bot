@@ -108,5 +108,5 @@ def test_migration_runs_inside_the_runtime_image():
 def test_migration_docs_use_docker_exec():
     """Runbook tidak boleh menyuruh `docker run` image migrasi lagi."""
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
-    assert "docker exec -u app tuyabot-withdb" in readme
+    assert "docker exec -u app tuya-telegram-bot" in readme
     assert "--target migration" not in readme

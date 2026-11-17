@@ -186,7 +186,7 @@ jumlah koneksi TCP ke device turun (satu polling, banyak pembaca).
 mysqldump -u "$MYSQL_USER" -p "$MYSQL_DATABASE" > /root/tuyabot-pre-sqlite.sql   # rollback
 mkdir -p data
 docker compose build && docker compose up -d
-docker exec -u app tuyabot-withdb python scripts/migrate_mysql_to_sqlite.py
+docker exec -u app tuya-telegram-bot python scripts/migrate_mysql_to_sqlite.py
 ```
 
 Setelah yakin, `MYSQL_*` boleh dihapus dari `.env` dan service MySQL lama boleh dimatikan.
@@ -241,7 +241,7 @@ tidak ikut — tetap ada di file dump, dan kalau perlu bisa dibawa dengan `--inc
 
 1. `mysqldump` di host untuk rollback (bot boleh tetap jalan)
 2. `docker compose build && docker compose up -d`
-3. `docker exec -u app tuyabot-withdb python scripts/migrate_mysql_to_sqlite.py`
+3. `docker exec -u app tuya-telegram-bot python scripts/migrate_mysql_to_sqlite.py`
    — dijalankan di container yang sama, tanpa image terpisah dan tanpa downtime.
    `-u app` wajib agar file DB tetap milik uid 10001
 4. Verifikasi: bandingkan jumlah baris sumber vs tujuan yang dicetak skrip, plus jumlah user
