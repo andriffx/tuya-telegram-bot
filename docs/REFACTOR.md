@@ -25,7 +25,7 @@ Keputusan yang sudah diambil:
 | 2 | Event loop, scheduler, timeout, health | **selesai** |
 | 2b | MySQL → SQLite + migrasi data | **selesai** |
 | 3 | Struktur modular (`src/tuyabot/`) | **selesai** |
-| 4 | Dockerfile & compose produksi | belum |
+| 4 | Dockerfile & compose produksi | **selesai** |
 | 5 | UI | belum |
 | 6 | Ops & dokumentasi | belum |
 
@@ -318,7 +318,54 @@ dengan test tetap hijau setelah tiap langkah.
 
 ---
 
-## Fase 4 — Docker & compose (belum)
+## Fase 4 — Docker & compose (selesai)
+
+### Hasil implementasi
+
+`Dockerfile` dua stage:
+
+- **builder** (`python:3.11-slim` + `build-essential`): install dependensi ke `/opt/venv`.
+- **runtime** (`python:3.11-slim`, tanpa compiler): copy venv + `src/` + `scripts/`,
+  `PYTHONPATH=/app/src`, `USER app` (uid/gid 10001), `HEALTHCHECK` memanggil `/healthz`,
+  `CMD ["python","-m","tuyabot.main"]`.
+
+`docker-compose.yml`:
+
+| Setelan | Nilai | Alasan |
+|---|---|---|
+| `API_HOST` | `127.0.0.1` | dengan host networking, API tidak boleh mendengar di IP publik |
+| `SQLITE_PATH` | `/app/data/tuyabot.db` | file database ada di volume, bukan di layer image |
+| `read_only` | `true` | container tidak bisa menulis ke filesystemnya sendiri |
+| `tmpfs` | `/tmp` | satu-satunya area tulis sementara |
+| `cap_drop` | `ALL` | tidak ada capability Linux yang dibutuhkan |
+| `security_opt` | `no-new-privileges` | cegah eskalasi hak akses |
+| `logging` | `json-file`, 10m × 3 | log container tidak menelan disk VPS |
+| `volumes` | `logs/`, `data/`, `backup/` | persist log, database, hasil backup |
+| `stop_grace_period` | `15s` | beri waktu shutdown scheduler + tutup SQLite |
+
+Keputusan yang **tidak** diambil: melepas `network_mode: host`. Bot berjalan di VPS dan
+mencapai perangkat lewat WireGuard; host networking memastikan rute `wg0` dipakai tanpa NAT
+tambahan. Risiko "API terbuka ke internet" ditutup dengan `API_HOST=127.0.0.1`, bukan dengan
+memindahkan network mode (yang berisiko memutus kontrol perangkat tanpa bisa diuji dari sini).
+Kalau nanti mau bridge network, checklist verifikasi ada di bagian "Rencana awal" di bawah.
+
+### Guard regresi
+
+`tests/test_deploy_config.py` (6 test) memeriksa: `API_HOST` loopback, `SQLITE_PATH` di volume,
+`read_only`/`cap_drop`/`no-new-privileges`, ketiga volume ada, `USER app` + `HEALTHCHECK` ada,
+dan `build-essential` tidak bocor ke stage runtime. Tanpa guard ini, satu perubahan compose
+bisa membuka dashboard ke publik lagi tanpa ada yang gagal.
+
+### Yang belum diverifikasi di sini
+
+Image-nya belum benar-benar di-build di sesi ini — tidak ada Docker di mesin kerja ini.
+Yang diverifikasi: sintaks YAML parse bersih, semua assert deploy lulus, aplikasi jalan lewat
+`python -m tuyabot.main` dengan `PYTHONPATH=src` (healthz 200, dashboard 200). Build pertama
+di VPS Anda adalah verifikasi terakhirnya.
+
+---
+
+## Rencana awal Fase 4 (referensi)
 
 - Dockerfile multi-stage, `python:3.11-slim` tetap, user non-root (`app`, uid 10001),
   tanpa `gcc` di layer akhir, `HEALTHCHECK` memanggil `/healthz`.

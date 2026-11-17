@@ -7,6 +7,13 @@ services:
     restart: unless-stopped
     environment:
       TZ: Asia/Makassar
+      # Dengan network_mode: host, uvicorn WAJIB hanya mendengar di loopback.
+      # Sebelumnya API mendengar di 0.0.0.0:8080 → dashboard terbuka dari internet
+      # dan hanya dijaga X-API-Key.
+      API_HOST: 127.0.0.1
+      API_PORT: "8080"
+      # Path database di dalam container; host: ./data/tuyabot.db
+      SQLITE_PATH: /app/data/tuyabot.db
     # Urutan penting: file belakangan meng-override file sebelumnya.
     # .env.dockhand (dibuat Dockhand, berisi token asli) harus paling akhir.
     env_file:
@@ -15,19 +22,36 @@ services:
       - path: .env.dockhand
         required: false
 
-
     # Mount persistent data dari host (JANGAN mount .env di sini agar Docker tidak membuat folder .env otomatis)
+    # Pemilik direktori host harus uid 10001 (user `app` di image):
+    #   sudo mkdir -p logs data && sudo chown -R 10001:10001 logs data
     volumes:
       - ./logs:/app/logs             # persist logs
       - ./data:/app/data             # SQLite (tuyabot.db + backup), persist antar-deploy
+      - ./backup:/app/backup         # hasil `VACUUM INTO` / salinan manual
 
-    # tinytuya needs host network to reach local Tuya devices
-    # (remove if using Tuya Cloud API only)
+    # tinytuya butuh jalur langsung ke perangkat di LAN (via WireGuard dari VPS).
+    # Host networking dipertahankan supaya rute wg0 dipakai tanpa NAT tambahan;
+    # API-nya sendiri dikunci ke 127.0.0.1 lewat API_HOST di atas.
     network_mode: host
 
-    # Dashboard API (host network → langsung di port host, bukan port mapping)
-    # Akses: http://<IP-server>:8080
+    # Container tidak boleh menulis ke filesystem-nya sendiri.
+    # /app/logs, /app/data, /app/backup tetap writable karena bind-mount.
+    read_only: true
+    tmpfs:
+      - /tmp
 
-    # Graceful shutdown
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+    # Graceful shutdown: beri waktu worker menyelesaikan siklus & menutup DB.
     stop_signal: SIGTERM
-    stop_grace_period: 10s
+    stop_grace_period: 15s
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

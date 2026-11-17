@@ -183,36 +183,51 @@ sqlite3 data/tuyabot.db "VACUUM INTO 'backup/tuyabot-$(date +%F).db'"
 ```bash
 cp .env.example .env
 # Edit .env — isi semua konfigurasi
-touch users_db.json
+
+# Direktori data + kepemilikan untuk user non-root di image (uid 10001)
+sudo mkdir -p logs data backup
+sudo chown -R 10001:10001 logs data backup
 ```
 
 ### 2. Build & Run
 
 ```bash
-docker-compose up --build -d
+docker compose up --build -d
 ```
 
 ### 3. Monitoring
 
 ```bash
-docker-compose logs -f tuyabot
+docker compose logs -f tuyabot
+docker compose ps               # kolom STATUS harus "healthy"
+curl -s http://127.0.0.1:8080/healthz
 ```
 
 ### 4. Command Docker
 
 ```bash
-docker-compose ps           # Status container
-docker-compose stop         # Stop bot
-docker-compose start        # Start bot
-docker-compose restart      # Restart bot
-docker-compose down         # Hapus container
-docker-compose down -v      # Hapus container + volumes
+docker compose ps           # Status container
+docker compose stop         # Stop bot
+docker compose start        # Start bot
+docker compose restart      # Restart bot
+docker compose down         # Hapus container
+docker compose down -v      # Hapus container + volumes
 ```
 
 ### ⚠️ Catatan Docker
 
-- **tinytuya memerlukan LAN langsung** — `network_mode: host` diperlukan. Jika menggunakan Mac/Windows Docker Desktop, deploy di Raspberry Pi/Linux server, atau gunakan Tuya Cloud API.
-- **Data user persist** di `users_db.json` via volume mount.
+- **tinytuya memerlukan jalur langsung ke perangkat** — `network_mode: host` dipakai agar rute
+  WireGuard di host terpakai. Konsekuensinya API ikut berbagi network host, karena itu
+  `API_HOST: 127.0.0.1` di compose wajib dipertahankan: dashboard hanya bisa diakses lewat
+  reverse proxy di host (nginx-ui/Cloudflare), bukan langsung dari internet.
+- **Container jalan sebagai user non-root (uid 10001)** dan filesystem-nya `read_only`.
+  Hanya `logs/`, `data/`, dan `backup/` yang writable — semuanya bind-mount.
+  Kalau `chown` di langkah 1 terlewat, bot gagal membuka database/log: jalankan chown lalu
+  `docker compose restart`.
+- **Database SQLite** ada di `data/tuyabot.db` (WAL). Backup kapan saja tanpa menghentikan bot:
+  `docker compose exec tuyabot python -c "import sqlite3; sqlite3.connect('/app/data/tuyabot.db').execute(\"VACUUM INTO '/app/backup/tuyabot.db'\")"`
+- **Healthcheck** memanggil `/healthz` (tanpa API key, tanpa sentuh database), jadi `docker ps`
+  jujur soal hidup/matinya proses.
 - **Log persist** di `bot.log` via volume mount.
 
 ---
