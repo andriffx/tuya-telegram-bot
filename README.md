@@ -65,8 +65,8 @@ DEVICE_AIR_KEY=your_local_key
 DEVICE_AIR_IP=your_ip_address
 DEVICE_AIR_VER=3.5
 
-# Role-Based Access Control
-SUPERADMIN_USERS=your_telegram_user_id
+# Role-Based Access Control (contoh dummy, ganti dengan ID Telegram Anda)
+SUPERADMIN_USERS=123456789
 
 # Database (SQLite, embedded — tidak perlu server)
 SQLITE_PATH=data/tuyabot.db

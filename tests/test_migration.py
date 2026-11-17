@@ -8,8 +8,8 @@ import tuyabot.storage.sqlite_store as database
 def test_json_migration_process(tmp_path):
     test_json = tmp_path / "users_db.json"
     test_json.write_text(json.dumps({
-        "users": {"1014915827": 2, "8559106318": 1},
-        "air_notify_recipients": [1014915827]
+        "users": {"111111111": 2, "222222222": 1},
+        "air_notify_recipients": [111111111]
     }))
 
     with patch("tuyabot.storage.sqlite_store.USERS_FILE", test_json), \

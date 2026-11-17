@@ -1191,7 +1191,7 @@ async def _callback_users(query, context, action: str, role: int):
             "➕ *Tambah User*\n\n"
             "Kirimkan *User ID* yang ingin ditambahkan.\n"
             "User bisa cek ID mereka via menu 🪪 Akun Saya.\n\n"
-            "_Ketik ID sebagai angka, contoh: `8559106318`_",
+            "_Ketik ID sebagai angka, contoh: `123456789`_",
             parse_mode="Markdown",
         )
         context.user_data["awaiting_add_user_id"] = True
