@@ -1,14 +1,13 @@
 """Regression test untuk wiring entry point run.py.
 
-Bug yang dicegah: `housekeeping_loop` memakai `database.cleanup_old_logs`, tetapi
-run.py hanya meng-import nama fungsi (`from database import init_db, log_power`)
-sehingga `database` tidak pernah terdefinisi. NameError-nya tertelan
-`except Exception` di dalam loop 24 jam, jadi pembersihan log tidak pernah jalan
-dan tidak ada test yang gagal.
+Bug yang dicegah: `run.py` memakai `database.cleanup_old_logs` tetapi hanya
+meng-import nama fungsi (`from database import init_db, log_power`), sehingga
+`database` tidak pernah terdefinisi. NameError-nya tertelan `except Exception`
+di dalam loop 24 jam, jadi pembersihan log tidak pernah jalan dan tidak ada
+test yang gagal. Fase 2 memindahkan loop itu ke `scheduler.py`; guard-nya
+sekarang menguji job-nya, bukan loop-nya.
 """
 
-import asyncio
-import contextlib
 import inspect
 
 import pytest
@@ -21,8 +20,8 @@ def test_run_imports_database_module():
     assert hasattr(run, "database"), "run.py wajib `import database`, bukan hanya nama fungsinya"
 
 
-def test_housekeeping_loop_target_is_callable():
-    source = inspect.getsource(run.housekeeping_loop)
+def test_housekeeping_target_is_callable():
+    source = inspect.getsource(run.run_housekeeping)
     assert "database.cleanup_old_logs" in source
     assert callable(run.database.cleanup_old_logs)
     assert callable(database.cleanup_old_logs)
@@ -40,31 +39,27 @@ def test_run_all_initialises_database():
 
 
 @pytest.mark.asyncio
-async def test_housekeeping_loop_actually_runs_cleanup(monkeypatch):
-    """Perilaku, bukan sekadar teks: satu siklus housekeeping harus memanggil cleanup.
-
-    Sebelum perbaikan, `database` tidak terdefinisi sehingga NameError ditelan
-    `except Exception` dan cleanup tidak pernah dipanggil.
-    """
+async def test_housekeeping_job_actually_runs_cleanup(monkeypatch):
+    """Job housekeeping di scheduler harus benar-benar memanggil cleanup."""
     calls = []
 
     def fake_cleanup(*args, **kwargs):
         calls.append((args, kwargs))
-        return {"power": 0, "activity": 0}
+        return {"power_logs_deleted": 1, "activity_logs_deleted": 2, "error_logs_deleted": 3}
 
     monkeypatch.setattr(run.database, "cleanup_old_logs", fake_cleanup)
 
-    sleeps = {"n": 0}
+    result = await run.run_housekeeping()
 
-    async def fake_sleep(_seconds):
-        sleeps["n"] += 1
-        if sleeps["n"] > 1:
-            raise asyncio.CancelledError
-        return None
+    assert calls, "cleanup_old_logs tidak dipanggil"
+    assert result["power_logs_deleted"] == 1
 
-    monkeypatch.setattr(run.asyncio, "sleep", fake_sleep)
 
-    with contextlib.suppress(asyncio.CancelledError):
-        await run.housekeeping_loop(interval_hours=24)
-
-    assert calls, "cleanup_old_logs tidak dipanggil — housekeeping mati lagi"
+def test_scheduler_registers_expected_jobs():
+    scheduler = run.build_scheduler()
+    names = {job.name for job in scheduler.jobs}
+    assert names == {"cache-warm", "power-snapshot", "housekeeping"}
+    housekeeping = next(j for j in scheduler.jobs if j.name == "housekeeping")
+    # Tidak boleh jalan di awal proses; cukup sekali sehari.
+    assert housekeeping.interval == run.HOUSEKEEPING_INTERVAL_HOURS * 3600
+    assert housekeeping.initial_delay == housekeeping.interval

@@ -28,6 +28,16 @@ if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
+@app.get("/healthz", include_in_schema=False)
+async def healthz():
+    """Liveness probe: tanpa autentikasi, tanpa cek database.
+
+    Dipakai Docker HEALTHCHECK dan Uptime Kuma. Sengaja tidak menyentuh MySQL
+    maupun perangkat — kalau MySQL mati, bot tetap hidup dan harus tetap dinilai hidup.
+    """
+    return {"status": "ok"}
+
+
 @app.get("/", include_in_schema=False)
 async def dashboard():
     index = STATIC_DIR / "index.html"

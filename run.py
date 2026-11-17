@@ -13,14 +13,22 @@ from telegram import Update
 
 import database
 from api.app import app as fastapi_app
+from asyncdb import run_db
+from asyncdb import shutdown as asyncdb_shutdown
 from bot import build_application
 from config import POWER_LOG_INTERVAL_MINUTES, validate_config
 from device_service import run_tuya, tuya
+from device_service import shutdown as device_shutdown
+from scheduler import Scheduler
+from state_cache import warm as warm_state_cache
 
 logger = logging.getLogger(__name__)
 
 API_HOST = os.getenv("API_HOST", "0.0.0.0")
 API_PORT = int(os.getenv("API_PORT", "8080"))
+# Seberapa sering cache status perangkat dihangatkan (detik).
+STATE_WARM_INTERVAL_SECONDS = max(15, int(os.getenv("STATE_WARM_INTERVAL_SECONDS", "60")))
+HOUSEKEEPING_INTERVAL_HOURS = max(1, int(os.getenv("HOUSEKEEPING_INTERVAL_HOURS", "24")))
 
 
 async def record_power_snapshot() -> bool:
@@ -35,7 +43,8 @@ async def record_power_snapshot() -> bool:
         # DP 1 adalah relay status (on/off) untuk plug air
         switch_state = bool(raw.get("1", False)) if isinstance(raw, dict) and "1" in raw else None
 
-        ok = database.log_power(
+        ok = await run_db(
+            database.log_power,
             device_name="air",
             power_w=float(res.get("power_w", 0)),
             voltage_v=float(res.get("voltage_v", 0)),
@@ -57,52 +66,46 @@ async def record_power_snapshot() -> bool:
         return False
 
 
-async def power_monitor_loop():
-    """Loop background untuk mencatat konsumsi daya secara periodik."""
-    interval_secs = max(60, POWER_LOG_INTERVAL_MINUTES * 60)
-    logger.info("Periodic power monitor dimulai (interval: %d menit)", POWER_LOG_INTERVAL_MINUTES)
-
-    # Jeda awal 10 detik agar bot dan API siap sepenuhnya sebelum polling pertama
-    try:
-        await asyncio.sleep(10)
-    except asyncio.CancelledError:
-        return
-
-    while True:
-        try:
-            await record_power_snapshot()
-        except asyncio.CancelledError:
-            logger.info("Power monitor worker dibatalkan (shutdown).")
-            break
-        except Exception as e:
-            logger.error("Error pada siklus power monitor worker: %s", e)
-
-        try:
-            await asyncio.sleep(interval_secs)
-        except asyncio.CancelledError:
-            logger.info("Power monitor worker dibatalkan (shutdown).")
-            break
+async def run_housekeeping() -> dict:
+    """Bersihkan log lawas; dipanggil scheduler (bukan loop sendiri)."""
+    logger.info("Menjalankan periodic database housekeeping...")
+    result = await run_db(database.cleanup_old_logs)
+    logger.info("Housekeeping selesai: %s", result)
+    return result
 
 
-async def housekeeping_loop(interval_hours: int = 24):
-    """Worker background untuk membersihkan log lawas setiap 24 jam."""
-    logger.info("Database housekeeping worker aktif (interval=%s jam).", interval_hours)
-    interval_secs = interval_hours * 3600
-    while True:
-        try:
-            await asyncio.sleep(interval_secs)
-        except asyncio.CancelledError:
-            logger.info("Housekeeping worker dibatalkan (shutdown).")
-            break
+async def warm_cache() -> None:
+    """Isi cache status perangkat supaya dashboard tidak memicu polling sendiri."""
+    await warm_state_cache()
 
-        try:
-            logger.info("Menjalankan periodic database housekeeping...")
-            await asyncio.to_thread(database.cleanup_old_logs)
-        except asyncio.CancelledError:
-            logger.info("Housekeeping worker dibatalkan (shutdown).")
-            break
-        except Exception as e:
-            logger.error("Error pada siklus housekeeping database: %s", e)
+
+def build_scheduler() -> Scheduler:
+    """Satu scheduler untuk semua pekerjaan berkala.
+
+    Dulu ada dua loop terpisah (power monitor dan housekeeping) yang masing-masing
+    memegang `asyncio.sleep` sendiri. Sekarang semuanya di satu tempat, berurutan,
+    dan berhenti bersama saat shutdown.
+    """
+    scheduler = Scheduler()
+    scheduler.add_job(
+        "cache-warm",
+        STATE_WARM_INTERVAL_SECONDS,
+        warm_cache,
+        initial_delay=5,
+    )
+    scheduler.add_job(
+        "power-snapshot",
+        max(60, POWER_LOG_INTERVAL_MINUTES * 60),
+        record_power_snapshot,
+        initial_delay=20,
+    )
+    scheduler.add_job(
+        "housekeeping",
+        HOUSEKEEPING_INTERVAL_HOURS * 3600,
+        run_housekeeping,
+        initial_delay=HOUSEKEEPING_INTERVAL_HOURS * 3600,
+    )
+    return scheduler
 
 
 async def run_all():
@@ -143,23 +146,21 @@ async def run_all():
         logger.info("Bot Telegram aktif")
         logger.info("Dashboard API: http://%s:%s/", API_HOST, API_PORT)
 
-        # Jalankan background periodic power monitor & housekeeping
-        power_task = asyncio.create_task(power_monitor_loop())
-        housekeeping_task = asyncio.create_task(housekeeping_loop())
+        # Satu scheduler: cache warmer, power snapshot, housekeeping
+        scheduler = build_scheduler()
+        scheduler.start()
 
         try:
             await server.serve()
         finally:
-            power_task.cancel()
-            housekeeping_task.cancel()
-            try:
-                await asyncio.gather(power_task, housekeeping_task, return_exceptions=True)
-            except Exception:
-                pass
+            await scheduler.stop()
 
             await application.updater.stop()
             await application.stop()
             await application.shutdown()
+
+            asyncdb_shutdown()
+            device_shutdown()
 
 
 

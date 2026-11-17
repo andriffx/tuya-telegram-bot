@@ -33,6 +33,19 @@ LIMITS = {
 
 # In-memory store: {user_id: [timestamp1, timestamp2, ...]}
 _buckets: dict[int, list[float]] = defaultdict(list)
+# Bucket user yang sudah lama tidak aktif dibuang supaya memori tidak tumbuh terus.
+PRUNE_INTERVAL = max(60.0, float(WINDOW) * 2)
+_last_prune = 0.0
+
+
+def _prune_stale(now: float) -> None:
+    global _last_prune
+    if now - _last_prune < PRUNE_INTERVAL:
+        return
+    _last_prune = now
+    cutoff = now - WINDOW
+    for uid in [uid for uid, stamps in _buckets.items() if not stamps or stamps[-1] <= cutoff]:
+        _buckets.pop(uid, None)
 
 
 def _cleanup(uid: int, now: float) -> int:
@@ -51,6 +64,7 @@ def check_rate_limit(uid: int, role: str) -> tuple[bool, int, int]:
         (allowed: bool, current: int, limit: int)
     """
     now = time.time()
+    _prune_stale(now)
     limit = LIMITS.get(role.lower(), LIMITS["user"])
     current = _cleanup(uid, now)
 

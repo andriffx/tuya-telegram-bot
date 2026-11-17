@@ -1,5 +1,6 @@
 """REST API routes untuk web dashboard."""
 
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -12,11 +13,15 @@ from api.schemas import (
     HealthResponse,
     PowerInfoResponse,
 )
+from asyncdb import run_db
 from auth_manager import auth
 from config import DEVICES
 from device_service import run_tuya, tuya
+from state_cache import cache, get_power, get_status
 
 router = APIRouter(prefix="/api", dependencies=[Depends(verify_api_key)])
+
+logger = logging.getLogger(__name__)
 
 
 def _switch_from_dps(name: str, dps: dict) -> bool | None:
@@ -30,7 +35,17 @@ def _switch_from_dps(name: str, dps: dict) -> bool | None:
 
 @router.get("/health", response_model=HealthResponse)
 async def health():
-    return HealthResponse(status="ok")
+    """Readiness: database bisa dihubungi + ada data perangkat yang belum basi."""
+    db_ok = await run_db(database.ping)
+    states = cache.snapshot()
+    devices_ok = any(item["success"] for item in states.values()) if states else False
+    if db_ok and devices_ok:
+        status = "ok"
+    elif db_ok:
+        status = "degraded"
+    else:
+        status = "down"
+    return HealthResponse(status=status, database=db_ok, devices=devices_ok, cache=states)
 
 
 @router.get("/devices", response_model=DeviceListResponse)
@@ -43,7 +58,7 @@ async def device_status(name: str):
     if name not in get_device_names():
         raise HTTPException(status_code=404, detail=f"Perangkat '{name}' tidak ditemukan")
 
-    result = await run_tuya(tuya.get_status, name)
+    result = await get_status(name)
     if not result.get("success"):
         return DeviceStatusResponse(
             success=False,
@@ -64,7 +79,7 @@ async def device_status(name: str):
 
 @router.get("/devices/air/power", response_model=PowerInfoResponse)
 async def air_power():
-    result = await run_tuya(tuya.get_power_info, "air")
+    result = await get_power("air")
     if not result.get("success"):
         return PowerInfoResponse(
             success=False,
@@ -97,11 +112,12 @@ async def _control(name: str, state: bool) -> ControlResponse:
 
     method = tuya.turn_on if state else tuya.turn_off
     result = await run_tuya(method, name)
+    cache.invalidate(name)
 
     try:
-        import database
         status_str = "success" if result.get("success") else "failed"
-        database.log_activity(
+        await run_db(
+            database.log_activity,
             user_id=0,
             user_role="api",
             device_name=name,
@@ -109,8 +125,8 @@ async def _control(name: str, state: bool) -> ControlResponse:
             status=status_str,
             message=result.get("message", ""),
         )
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("[API] Gagal mencatat aktivitas kontrol ke database: %s", e)
 
     return ControlResponse(
         success=result.get("success", False),
@@ -125,28 +141,28 @@ async def _control(name: str, state: bool) -> ControlResponse:
 @router.get("/db/stats")
 async def get_database_stats():
     """Statistik ringkas database MySQL & retensi log."""
-    return database.get_db_stats()
+    return await run_db(database.get_db_stats)
 
 
 @router.get("/db/power-logs")
 async def get_power_logs(limit: int = 50, device: str | None = None):
     """Ambil data konsumsi daya terbaru dari device_power_logs."""
     limit = max(1, min(limit, 200))
-    return database.get_recent_power_logs(device_name=device, limit=limit)
+    return await run_db(database.get_recent_power_logs, device_name=device, limit=limit)
 
 
 @router.get("/db/activities")
 async def get_activity_logs(limit: int = 50):
     """Ambil riwayat aktivitas kontrol perangkat dari device_activity_logs."""
     limit = max(1, min(limit, 200))
-    return database.get_recent_activities(limit=limit)
+    return await run_db(database.get_recent_activities, limit=limit)
 
 
 @router.get("/db/users")
 async def get_users_list():
     """Daftar user ENV & MySQL serta daftar penerima notifikasi air."""
-    details = auth.list_users_detailed()
-    recipients = list(auth.get_air_notify_recipient_ids())
+    details = await run_db(auth.list_users_detailed)
+    recipients = list(await run_db(auth.get_air_notify_recipient_ids))
     return {
         "env": details.get("env", {}),
         "runtime": details.get("runtime", []),
@@ -158,13 +174,13 @@ async def get_users_list():
 async def get_error_logs(limit: int = 50):
     """Ambil log error aplikasi dari app_error_logs."""
     limit = max(1, min(limit, 200))
-    return database.get_recent_app_errors(limit=limit)
+    return await run_db(database.get_recent_app_errors, limit=limit)
 
 
 @router.post("/db/cleanup")
 async def cleanup_database(retention_days: int | None = None):
     """Jalankan pembersihan log database (housekeeping) secara manual."""
-    res = database.cleanup_old_logs(retention_days=retention_days)
+    res = await run_db(database.cleanup_old_logs, retention_days=retention_days)
     return {
         "success": True,
         "message": f"Pembersihan database selesai: {sum(res.values())} baris log dihapus",

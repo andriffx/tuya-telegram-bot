@@ -23,13 +23,15 @@ class TuyaDeviceController:
 
     def __init__(self):
         self.devices = {}
-        # Semua I/O Tuya diserialkan — hindari race saat air+lampu diklik bersamaan
-        self._io_lock = threading.Lock()
+        # Satu lock per perangkat — kontrol air dan lampu tidak lagi saling menunggu,
+        # tetapi I/O ke perangkat yang sama tetap diserialkan.
+        self._device_locks: dict = {}
         self._initialize_devices()
 
     def _initialize_devices(self):
         """Inisialisasi koneksi ke semua perangkat."""
         for name, info in DEVICES.items():
+            self._device_locks[name] = threading.Lock()
             try:
                 device = tinytuya.Device(
                     dev_id=info["id"],
@@ -142,7 +144,7 @@ class TuyaDeviceController:
         dps_switch = device_data["info"].get("dps_switch", 1)
         icon = "💧" if device_name == "air" else "💡"
 
-        with self._io_lock:
+        with self._device_locks[device_name]:
             # ── Cek status — hanya no-op jika DPS switch terbaca dengan valid ──
             current = self._get_switch_state(device_name)
             if current is not None and current == state:
@@ -207,7 +209,7 @@ class TuyaDeviceController:
         if device is None:
             return {"success": False, "message": f"Perangkat '{device_name}' belum diinisialisasi."}
 
-        with self._io_lock:
+        with self._device_locks[device_name]:
             last_error = None
             for attempt in range(1, RETRIES + 1):
                 try:

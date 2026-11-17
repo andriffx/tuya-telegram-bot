@@ -111,6 +111,18 @@ def get_db_connection():
                 pass
 
 
+def ping() -> bool:
+    """Cek konektivitas database tanpa memuat data apa pun (untuk readiness check)."""
+    try:
+        with get_db_connection() as (_conn, cursor):
+            cursor.execute("SELECT 1")
+            cursor.fetchone()
+        return True
+    except Exception as e:
+        logger.warning("[DATABASE WARNING] Ping database gagal: %s", e)
+        return False
+
+
 def init_db(migrate_json: bool = True) -> bool:
     """
     Buat tabel-tabel yang dibutuhkan jika belum ada dan lakukan migrasi data lama jika diperlukan.

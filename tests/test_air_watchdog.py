@@ -123,17 +123,14 @@ async def test_air_watchdog_detects_idle_and_auto_shuts_off():
     status_response = {"success": True, "status": {"1": True}}
     power_response = {"success": True, "power_w": 120.0}  # idle / leak cycling
 
-    with patch("bot.run_tuya", new_callable=AsyncMock) as mock_tuya, \
+    with patch("bot.get_status", new_callable=AsyncMock) as mock_status, \
+         patch("bot.get_power", new_callable=AsyncMock) as mock_power, \
          patch("bot._execute_air_auto_off", new_callable=AsyncMock) as mock_auto_off, \
          patch.object(config, "AIR_AUTO_OFF_SAMPLE_COUNT", 3), \
          patch.object(config, "AIR_AUTO_OFF_CHECK_MINUTES", 0.0005):
 
-        mock_tuya.side_effect = [
-            status_response,  # get_status
-            power_response,   # sample 1
-            power_response,   # sample 2
-            power_response,   # sample 3
-        ]
+        mock_status.return_value = status_response
+        mock_power.return_value = power_response
 
 
         task = asyncio.create_task(bot._air_watchdog_loop(fake_context, fake_user))

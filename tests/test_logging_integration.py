@@ -7,9 +7,9 @@ import pytest
 async def test_action_logging_helper():
     with patch("database.log_activity") as mock_log_act, \
          patch("database.log_power") as mock_log_pwr, \
-         patch("bot.run_tuya", new_callable=AsyncMock) as mock_tuya:
+         patch("bot.get_power", new_callable=AsyncMock) as mock_power:
 
-        mock_tuya.return_value = {
+        mock_power.return_value = {
             "success": True,
             "power_w": 250.0,
             "voltage_v": 220.0,

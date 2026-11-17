@@ -7,6 +7,9 @@ from pydantic import BaseModel
 
 class HealthResponse(BaseModel):
     status: str
+    database: bool | None = None
+    devices: bool | None = None
+    cache: dict[str, Any] | None = None
 
 
 class DeviceInfo(BaseModel):

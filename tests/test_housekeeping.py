@@ -5,18 +5,19 @@ import pytest
 
 
 @pytest.mark.asyncio
-async def test_housekeeping_loop_single_iteration():
-    with patch("database.cleanup_old_logs", return_value={"power_logs_deleted": 5}):
-        from run import housekeeping_loop
-        # Run housekeeping_loop with cancellation after brief time
-        task = asyncio.create_task(housekeeping_loop(interval_hours=1))
-        await asyncio.sleep(0.05)
-        task.cancel()
-        try:
-            await task
-        except asyncio.CancelledError:
-            pass
-        # Loop was canceled gracefully without error
+async def test_housekeeping_job_runs_via_scheduler():
+    """Housekeeping sekarang job scheduler, bukan loop sendiri."""
+    import run
+    from scheduler import Scheduler
+
+    with patch("database.cleanup_old_logs", return_value={"power_logs_deleted": 5}) as mock_cleanup:
+        scheduler = Scheduler()
+        scheduler.add_job("housekeeping", 0.05, run.run_housekeeping, initial_delay=0)
+        scheduler.start()
+        await asyncio.sleep(0.12)
+        await scheduler.stop()
+
+        assert mock_cleanup.called
 
 @pytest.mark.asyncio
 async def test_cleanlogs_command():

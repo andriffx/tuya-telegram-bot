@@ -27,10 +27,12 @@ from telegram.request import HTTPXRequest
 
 import config
 import database
+from asyncdb import run_db
 from auth_manager import ADMIN, PUBLIC, ROLE_NAMES, SUPERADMIN, USER, auth
 from config import TELEGRAM_BOT_TOKEN
 from device_service import run_tuya, tuya
 from rate_limiter import rate_limit
+from state_cache import cache, get_power, get_status
 
 # ── Logging ke file + console ──
 handlers: list[logging.Handler] = [logging.StreamHandler()]
@@ -289,7 +291,8 @@ async def _log_control_event(user, device_name: str, action: str, result: dict):
         if result.get("no_op"):
             msg = f"{msg} (no_op)"
 
-        database.log_activity(
+        await run_db(
+            database.log_activity,
             user_id=user.id,
             user_role=role_name,
             device_name=device_name,
@@ -300,10 +303,11 @@ async def _log_control_event(user, device_name: str, action: str, result: dict):
 
         # Jika kontrol perangkat air sukses, rekam daya juga dengan source 'action_switch'
         if device_name == "air" and result.get("success"):
-            power_res = await run_tuya(tuya.get_power_info, "air")
+            power_res = await get_power("air", force=True)
             if power_res.get("success"):
-                switch_state = (action == "on")
-                database.log_power(
+                switch_state = action == "on"
+                await run_db(
+                    database.log_power,
                     device_name="air",
                     power_w=float(power_res.get("power_w", 0)),
                     voltage_v=float(power_res.get("voltage_v", 0)),
@@ -326,6 +330,7 @@ async def _control_device_callback(
     """Kontrol via inline button: kirim pending → Tuya → edit pesan jadi hasil."""
     status_msg = await query.message.reply_text(pending_msg)
     result = await run_tuya(method, device_name)
+    cache.invalidate(device_name)
     await _finalize_control_message(status_msg, result, device_name, query.message)
     asyncio.create_task(
         _notify_control_event(context, query.from_user, device_name, action, result)
@@ -347,6 +352,7 @@ async def _control_device_command(
     """Kontrol via command: kirim pending → Tuya → edit pesan jadi hasil."""
     status_msg = await update.message.reply_text(pending_msg)
     result = await run_tuya(method, device_name)
+    cache.invalidate(device_name)
     await _finalize_control_message(status_msg, result, device_name, update.message)
     asyncio.create_task(
         _notify_control_event(context, update.effective_user, device_name, action, result)
@@ -407,7 +413,7 @@ async def _air_watchdog_loop(context: ContextTypes.DEFAULT_TYPE, user):
             await asyncio.sleep(check_interval_secs)
 
             # 1. Cek apakah pompa masih menyala di Tuya
-            status_res = await run_tuya(tuya.get_status, "air")
+            status_res = await get_status("air")
             if not status_res.get("success"):
                 logger.warning("[AIR WATCHDOG] Gagal membaca status Tuya plug air, coba lagi siklus berikutnya.")
                 continue
@@ -431,7 +437,7 @@ async def _air_watchdog_loop(context: ContextTypes.DEFAULT_TYPE, user):
             # 3. Multi-sample daya (dinamis dari config env)
             samples = []
             for _ in range(sample_count):
-                p_res = await run_tuya(tuya.get_power_info, "air")
+                p_res = await get_power("air", force=True)
                 if p_res.get("success"):
                     samples.append(float(p_res.get("power_w", 0.0)))
                 await asyncio.sleep(sample_delay)
@@ -475,6 +481,7 @@ async def _execute_air_auto_off(context: ContextTypes.DEFAULT_TYPE, user, reason
     """Eksekusi pemadaman otomatis, catat ke database, dan kirim notifikasi."""
     # 1. Matikan via Tuya
     off_result = await run_tuya(tuya.turn_off, "air")
+    cache.invalidate("air")
     logger.info("[AIR WATCHDOG] Eksekusi turn_off Tuya: %s", off_result)
 
     user_id = getattr(user, "id", None) or (user.get("id") if isinstance(user, dict) else 0)
@@ -488,7 +495,8 @@ async def _execute_air_auto_off(context: ContextTypes.DEFAULT_TYPE, user, reason
             if reason == "max_time"
             else f"Auto-off: Pompa terdeteksi idle/tidak digunakan (daya {power_w:.1f}W)"
         )
-        database.log_activity(
+        await run_db(
+            database.log_activity,
             user_id=user_id,
             user_role="User",
             device_name="air",
@@ -496,7 +504,8 @@ async def _execute_air_auto_off(context: ContextTypes.DEFAULT_TYPE, user, reason
             status="auto_off",
             message=msg,
         )
-        database.log_power(
+        await run_db(
+            database.log_power,
             device_name="air",
             power_w=power_w,
             voltage_v=0.0,
@@ -782,7 +791,7 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("📊 Mengecek status perangkat...")
     lines = ["📊 *Status Perangkat*\n"]
     for name, label, emoji in [("lampu", "Lampu", "💡"), ("air", "Air", "💧")]:
-        result = await run_tuya(tuya.get_status, name)
+        result = await get_status(name)
         if result["success"]:
             dps = result.get("status", {})
             if isinstance(dps, dict):
@@ -1091,7 +1100,7 @@ async def _callback_air(query, context, action: str, role: int):
             query, context, "air", "off", "🔌 Mematikan air...", tuya.turn_off
         )
     elif action == "status":
-        result = await run_tuya(tuya.get_power_info, "air")
+        result = await get_power("air")
         if result["success"]:
             dps = result.get("raw", {})
             switch_val = dps.get("1") if isinstance(dps, dict) else None
@@ -1129,7 +1138,7 @@ async def _callback_lampu(query, context, action: str, role: int):
             query, context, "lampu", "off", "🌑 Mematikan lampu...", tuya.turn_off
         )
     elif action == "status":
-        result = await run_tuya(tuya.get_status, "lampu")
+        result = await get_status("lampu")
         if result["success"]:
             dps = result.get("status", {})
             switch_val = dps.get("20") if isinstance(dps, dict) else None
@@ -1144,7 +1153,7 @@ async def _callback_mon(query, context, action: str):
     if action == "status":
         lines = ["📊 *Status Perangkat*\n"]
         for name, label, emoji in [("lampu", "Lampu", "💡"), ("air", "Air", "💧")]:
-            result = await run_tuya(tuya.get_status, name)
+            result = await get_status(name)
             if result["success"]:
                 dps = result.get("status", {})
                 if isinstance(dps, dict):
