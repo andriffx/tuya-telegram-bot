@@ -67,3 +67,15 @@ def test_compiler_kept_out_of_runtime_stage():
     runtime_stage = text.split("FROM python:3.11-slim AS runtime", 1)
     assert len(runtime_stage) == 2, "stage runtime tidak ditemukan"
     assert "build-essential" not in runtime_stage[1], "compiler tidak boleh ikut ke image akhir"
+
+
+def test_migration_dependency_only_in_migration_stage():
+    """mysql-connector tidak boleh masuk runtime, tapi harus ada untuk skrip migrasi."""
+    text = DOCKERFILE_PATH.read_text(encoding="utf-8")
+    runtime_and_after = text.split("FROM python:3.11-slim AS runtime", 1)[1]
+    runtime_only = runtime_and_after.split("FROM runtime AS migration", 1)[0]
+    migration_only = runtime_and_after.split("FROM runtime AS migration", 1)[1]
+
+    assert "mysql-connector-python" not in runtime_only
+    assert "mysql-connector-python" in migration_only
+    assert "AS migration" in text

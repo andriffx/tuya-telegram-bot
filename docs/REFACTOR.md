@@ -186,7 +186,10 @@ jumlah koneksi TCP ke device turun (satu polling, banyak pembaca).
 docker compose stop tuyabot
 mysqldump -u "$MYSQL_USER" -p "$MYSQL_DATABASE" > /root/tuyabot-pre-sqlite.sql   # rollback
 mkdir -p data
-docker compose run --rm tuyabot python scripts/migrate_mysql_to_sqlite.py --mysql-dump /root/tuyabot-pre-sqlite.sql
+docker compose build
+docker build --target migration -t tuyabot-migration .
+docker run --rm --network host --env-file .env -v "$PWD/data:/app/data" \
+  tuyabot-migration python scripts/migrate_mysql_to_sqlite.py
 docker compose up -d
 ```
 

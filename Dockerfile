@@ -59,3 +59,16 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=25s --retries=3 \
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["python", "-m", "tuyabot.main"]
+
+
+# ── Stage 3: migrasi MySQL → SQLite (bukan untuk produksi) ──
+# Dipakai sekali saat pindah penyimpanan:
+#   docker build --target migration -t tuyabot-migration .
+FROM runtime AS migration
+
+# mysql-connector-python sengaja TIDAK ada di image runtime; hanya di stage ini.
+USER root
+RUN /opt/venv/bin/pip install --no-cache-dir "mysql-connector-python>=9.0.0"
+
+# entrypoint tetap dipakai: ia merapikan kepemilikan ./data lalu turun ke uid 10001
+

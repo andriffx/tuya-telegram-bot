@@ -215,7 +215,56 @@ docker compose ps               # kolom STATUS harus "healthy"
 curl -s http://127.0.0.1:8080/healthz
 ```
 
-### 4. Command Docker
+### 4. Upgrade dari versi MySQL (sekali saja)
+
+Urutan ini mengubah penyimpanan dari MySQL ke SQLite. Downtime ±2–5 menit (termasuk build).
+
+```bash
+# 0. Pre-flight
+docker compose version                 # butuh Compose v2.24+ (sintaks env_file path/required)
+df -h .                                # sisakan minimal 1 GB
+grep -c "^MYSQL_" .env                 # harus > 0; kredensial masih dipakai skrip migrasi
+
+# 1. Tag image lama untuk rollback
+docker tag tuyabot-withdb:latest tuyabot-withdb:pre-sqlite
+
+# 2. Hentikan bot dan ambil dump MySQL (rollback data)
+docker compose stop tuyabot
+mkdir -p data backup
+mysqldump -u "$MYSQL_USER" -p "$MYSQL_DATABASE" > /root/tuyabot-pre-sqlite.sql
+ls -lh /root/tuyabot-pre-sqlite.sql
+
+# 3. Build image baru + image khusus migrasi
+docker compose build
+docker build --target migration -t tuyabot-migration .
+
+# 4. Salin data MySQL → SQLite (butuh akses ke MySQL di 127.0.0.1 host)
+docker run --rm --network host --env-file .env \
+  -v "$PWD/data:/app/data" \
+  tuyabot-migration python scripts/migrate_mysql_to_sqlite.py
+
+#    Keluarannya: tabel | sumber | tujuan | status. Semua harus OK dan exit code 0.
+
+# 5. Nyalakan versi baru
+docker compose up -d
+sleep 20 && docker compose ps          # STATUS harus "healthy"
+```
+
+Kalau langkah 4 gagal atau jumlah baris tidak sama: **jangan** jalankan langkah 5.
+
+```bash
+# Rollback
+docker compose down
+docker tag tuyabot-withdb:pre-sqlite tuyabot-withdb:latest
+docker compose up -d
+mysql -u "$MYSQL_USER" -p "$MYSQL_DATABASE" < /root/tuyabot-pre-sqlite.sql   # bila data perlu dipulihkan
+```
+
+Setelah seminggu berjalan normal: hapus baris `MYSQL_*` dari `.env`, lalu matikan service MySQL
+lama. Skrip migrasi dan image `tuyabot-migration` hanya dipakai sekali — boleh dihapus
+(`docker rmi tuyabot-migration`).
+
+### 5. Command Docker
 
 ```bash
 docker compose ps           # Status container
