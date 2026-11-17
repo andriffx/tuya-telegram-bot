@@ -5,15 +5,8 @@ services:
       dockerfile: Dockerfile
     container_name: tuyabot-withdb
     restart: unless-stopped
-    environment:
-      TZ: Asia/Makassar
-      # Dengan network_mode: host, uvicorn WAJIB hanya mendengar di loopback.
-      # Sebelumnya API mendengar di 0.0.0.0:8080 → dashboard terbuka dari internet
-      # dan hanya dijaga X-API-Key.
-      API_HOST: 127.0.0.1
-      API_PORT: "8080"
-      # Path database di dalam container; host: ./data/tuyabot.db
-      SQLITE_PATH: /app/data/tuyabot.db
+    # Semua konfigurasi (TZ, API_HOST, API_PORT, SQLITE_PATH, token, dst) dibaca
+    # dari file .env — TIDAK ditulis di sini. Satu tempat untuk mengubah semuanya.
     # Urutan penting: file belakangan meng-override file sebelumnya.
     # .env.dockhand (dibuat Dockhand, berisi token asli) harus paling akhir.
     env_file:
@@ -32,7 +25,7 @@ services:
 
     # tinytuya butuh jalur langsung ke perangkat di LAN (via WireGuard dari VPS).
     # Host networking dipertahankan supaya rute wg0 dipakai tanpa NAT tambahan;
-    # API-nya sendiri dikunci ke 127.0.0.1 lewat API_HOST di atas.
+    # alamat bind API diatur lewat API_HOST di .env (default 127.0.0.1).
     network_mode: host
 
     # Container tidak boleh menulis ke filesystem-nya sendiri.

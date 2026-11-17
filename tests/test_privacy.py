@@ -43,3 +43,39 @@ def test_no_personal_telegram_ids_in_repo_files():
         + ", ".join(offenders)
         + " — ganti dengan dummy atau tambahkan ke ALLOWED_NUMBERS bila memang dummy."
     )
+
+
+IPV4_PATTERN = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
+
+# Alamat yang boleh muncul di dokumentasi: loopback, alamat fiktif untuk contoh,
+# dan default jaringan Docker. Alamat infrastruktur sungguhan TIDAK boleh ada.
+ALLOWED_IPS = {
+    "127.0.0.1",
+    "0.0.0.0",
+    "10.0.0.1",
+    "10.0.0.2",
+    "172.17.0.0",
+    "172.17.0.1",
+    "172.18.0.0",
+    "172.18.0.1",
+}
+
+DOC_SUFFIXES = {".md", ".example"}
+
+
+def test_no_real_infrastructure_ips_in_docs():
+    """Repo ini publik: dokumentasi hanya boleh memakai alamat contoh/fiktif."""
+    offenders = []
+    for path in _tracked_text_files():
+        if path.suffix not in DOC_SUFFIXES and path.name != ".env.example":
+            continue
+        text = path.read_text(encoding="utf-8", errors="ignore")
+        for match in IPV4_PATTERN.finditer(text):
+            if match.group() not in ALLOWED_IPS:
+                offenders.append(f"{path.relative_to(ROOT)}: {match.group()}")
+
+    assert not offenders, (
+        "Alamat IP infrastruktur ditemukan di dokumentasi publik: "
+        + ", ".join(sorted(set(offenders)))
+        + " — ganti dengan contoh fiktif (mis. 10.0.0.2)."
+    )

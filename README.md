@@ -215,6 +215,37 @@ docker compose ps               # kolom STATUS harus "healthy"
 curl -s http://127.0.0.1:8080/healthz
 ```
 
+### Akses dashboard (pilih satu)
+
+Karena `network_mode: host`, alamat bind API ditentukan `API_HOST` di `.env`. Jangan pakai
+`0.0.0.0` di VPS ber-IP publik.
+
+| `API_HOST` | Bisa dibuka dari | Catatan |
+|---|---|---|
+| `127.0.0.1` (default) | hanya dalam VPS | paling aman; akses lewat `ssh -L 8080:127.0.0.1:8080 user@vps` |
+| `10.0.0.2` | homelab lewat WireGuard | dashboard tidak tersentuh internet publik; butuh rule ufw di VPS |
+| `0.0.0.0` | siapa pun yang bisa menjangkau IP publik | **hindari** |
+
+Untuk cara WireGuard (homelab mengakses `http://10.0.0.2:8080`):
+
+```bash
+# .env di VPS
+API_HOST=10.0.0.2
+
+# firewall VPS: hanya izinkan lewat interface WireGuard
+sudo ufw deny 8080/tcp                                   # tutup dari WAN bila sebelumnya terbuka
+sudo ufw allow in on wg0 to any port 8080 proto tcp
+sudo ufw status numbered | grep 8080
+```
+
+Di sisi homelab, OPNsense perlu mengizinkan LAN → `10.0.0.2:8080` (rule di interface
+WireGuard), dan kalau ingin nama yang enak diingat tambahkan record di Unbound:
+`tuyabot.home -> 10.0.0.2` (split-horizon, tidak pernah keluar ke internet).
+
+TLS tidak diperlukan di dalam tunnel — biarkan `SESSION_COOKIE_SECURE=false` untuk akses
+`http://` lewat WireGuard. Set `true` hanya bila dashboard diakses lewat HTTPS (Cloudflare
+atau reverse proxy ber-TLS).
+
 ### 3b. Uji dulu tanpa menyentuh produksi
 
 Cara paling aman: jalankan **hanya bagian web** dari image baru. Bot Telegram tidak ikut
@@ -325,9 +356,9 @@ docker compose down -v      # Hapus container + volumes
 ### ⚠️ Catatan Docker
 
 - **tinytuya memerlukan jalur langsung ke perangkat** — `network_mode: host` dipakai agar rute
-  WireGuard di host terpakai. Konsekuensinya API ikut berbagi network host, karena itu
-  `API_HOST: 127.0.0.1` di compose wajib dipertahankan: dashboard hanya bisa diakses lewat
-  reverse proxy di host (nginx-ui/Cloudflare), bukan langsung dari internet.
+  WireGuard di host terpakai. Karena berbagi network host, **alamat bind API diatur `API_HOST`
+  di `.env`** (default `127.0.0.1`): dashboard tidak pernah terbuka ke internet publik.
+  Pilihan alamat dan cara aksesnya ada di bagian "Akses dashboard" di atas.
 - **Container jalan sebagai user non-root (uid 10001)** dan filesystem-nya `read_only`.
   Hanya `logs/`, `data/`, dan `backup/` yang writable — semuanya bind-mount.
   Kepemilikan ketiga direktori diperbaiki otomatis oleh entrypoint saat start, jadi tidak ada

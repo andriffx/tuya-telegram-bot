@@ -347,8 +347,8 @@ Python tetap non-root dan `SIGTERM` tetap sampai ke aplikasi. Itu sebabnya image
 
 | Setelan | Nilai | Alasan |
 |---|---|---|
-| `API_HOST` | `127.0.0.1` | dengan host networking, API tidak boleh mendengar di IP publik |
-| `SQLITE_PATH` | `/app/data/tuyabot.db` | file database ada di volume, bukan di layer image |
+| `API_HOST` | dari `.env` (default `127.0.0.1`) | dengan host networking, API tidak boleh mendengar di IP publik |
+| `SQLITE_PATH` | dari `.env` (`data/tuyabot.db` relatif ke `/app`) | file database ada di volume, bukan di layer image |
 | `read_only` | `true` | container tidak bisa menulis ke filesystemnya sendiri |
 | `tmpfs` | `/tmp` | satu-satunya area tulis sementara |
 | `cap_drop` | `ALL` | tidak ada capability Linux yang dibutuhkan |
@@ -364,12 +364,21 @@ tambahan. Risiko "API terbuka ke internet" ditutup dengan `API_HOST=127.0.0.1`, 
 memindahkan network mode (yang berisiko memutus kontrol perangkat tanpa bisa diuji dari sini).
 Kalau nanti mau bridge network, checklist verifikasi ada di bagian "Rencana awal" di bawah.
 
+### Konfigurasi hanya dari `.env`
+
+Compose **tidak** memuat nilai konfigurasi: blok `environment:` dihapus, semua variabel (TZ,
+API_HOST, API_PORT, SQLITE_PATH, token, kredensial) datang dari `.env` lewat `env_file`.
+Supaya tetap aman kalau `.env` lupa diisi, default di kode untuk `API_HOST` adalah `127.0.0.1`
+(bukan `0.0.0.0` seperti sebelumnya).
+
 ### Guard regresi
 
-`tests/test_deploy_config.py` (6 test) memeriksa: `API_HOST` loopback, `SQLITE_PATH` di volume,
-`read_only`/`cap_drop`/`no-new-privileges`, ketiga volume ada, `USER app` + `HEALTHCHECK` ada,
-dan `build-essential` tidak bocor ke stage runtime. Tanpa guard ini, satu perubahan compose
-bisa membuka dashboard ke publik lagi tanpa ada yang gagal.
+`tests/test_deploy_config.py` mengunci: compose tidak punya blok `environment`, `.env.example`
+mendokumentasikan `API_HOST`/`API_PORT`/`SQLITE_PATH`/`TZ`, default bind loopback,
+`read_only`/`cap_drop`/`no-new-privileges`, ketiga volume ada, `HEALTHCHECK` membaca `API_HOST`,
+`entrypoint` melakukan chown lalu `exec setpriv`, `build-essential` tidak bocor ke stage runtime,
+dan `mysql-connector-python` hanya ada di stage `migration`. Tanpa guard ini, satu perubahan
+compose bisa membuka dashboard ke publik lagi tanpa ada yang gagal.
 
 ### Yang belum diverifikasi di sini
 

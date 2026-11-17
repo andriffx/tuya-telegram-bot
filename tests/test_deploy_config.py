@@ -21,13 +21,37 @@ def service():
     return data["services"]["tuyabot"]
 
 
-def test_api_binds_loopback_only(service):
-    """Dengan host networking, API_HOST harus 127.0.0.1 — bukan 0.0.0.0."""
-    assert service["environment"]["API_HOST"] == "127.0.0.1"
+def test_no_settings_hardcoded_in_compose(service):
+    """Compose hanya mengatur struktur; semua nilai datang dari .env."""
+    assert "environment" not in service, (
+        "jangan menaruh nilai konfigurasi di compose — pindahkan ke .env"
+    )
+    assert service["env_file"], "compose harus membaca .env"
+    paths = [item["path"] if isinstance(item, dict) else item for item in service["env_file"]]
+    assert ".env" in paths
+
+
+def test_env_example_documents_bind_and_paths():
+    text = (ROOT / ".env.example").read_text(encoding="utf-8")
+    assert "API_HOST=127.0.0.1" in text
+    assert "API_PORT=8080" in text
+    assert "SQLITE_PATH=data/tuyabot.db" in text
+    assert "TZ=" in text
+
+
+def test_api_default_is_loopback_not_public():
+    """Kalau .env lupa diisi, bind default harus tetap aman."""
+    source = (ROOT / "src/tuyabot/main.py").read_text(encoding="utf-8")
+    assert 'os.getenv("API_HOST", "127.0.0.1")' in source
+    assert 'os.getenv("API_HOST", "0.0.0.0")' not in source
 
 
 def test_database_path_points_to_mounted_volume(service):
-    assert service["environment"]["SQLITE_PATH"] == "/app/data/tuyabot.db"
+    """SQLITE_PATH relatif terhadap WORKDIR /app, jadi ./data/tuyabot.db ikut volume."""
+    volumes = " ".join(service["volumes"])
+    assert "./data:/app/data" in volumes
+    text = (ROOT / ".env.example").read_text(encoding="utf-8")
+    assert "SQLITE_PATH=data/tuyabot.db" in text
 
 
 def test_container_is_hardened(service):

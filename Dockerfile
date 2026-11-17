@@ -54,8 +54,10 @@ RUN chmod 0755 /usr/local/bin/entrypoint.sh
 EXPOSE 8080
 
 # Liveness: /healthz tidak butuh API key dan tidak menyentuh database.
+# Host diambil dari API_HOST supaya tetap benar walau bind-nya bukan loopback
+# (mis. alamat WireGuard). 0.0.0.0 tidak bisa dipakai sebagai tujuan request.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=25s --retries=3 \
-    CMD python -c "import sys,urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=3).status == 200 else 1)"
+    CMD python -c "import os,sys,urllib.request; h=os.getenv('API_HOST','127.0.0.1'); h='127.0.0.1' if h in ('0.0.0.0','','::') else h; p=os.getenv('API_PORT','8080'); sys.exit(0 if urllib.request.urlopen(f'http://{h}:{p}/healthz', timeout=3).status == 200 else 1)"
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["python", "-m", "tuyabot.main"]

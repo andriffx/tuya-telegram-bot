@@ -30,7 +30,7 @@ from .web.app import app as fastapi_app
 
 logger = logging.getLogger(__name__)
 
-API_HOST = os.getenv("API_HOST", "0.0.0.0")
+API_HOST = os.getenv("API_HOST", "127.0.0.1")
 API_PORT = int(os.getenv("API_PORT", "8080"))
 # Seberapa sering cache status perangkat dihangatkan (detik).
 STATE_WARM_INTERVAL_SECONDS = max(15, int(os.getenv("STATE_WARM_INTERVAL_SECONDS", "60")))
