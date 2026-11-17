@@ -26,7 +26,7 @@ Keputusan yang sudah diambil:
 | 2b | MySQL → SQLite + migrasi data | **selesai** |
 | 3 | Struktur modular (`src/tuyabot/`) | **selesai** |
 | 4 | Dockerfile & compose produksi | **selesai** |
-| 5 | UI | belum |
+| 5 | UI | **selesai** |
 | 6 | Ops & dokumentasi | belum |
 
 ---
@@ -425,7 +425,71 @@ kredensial.
 
 ---
 
-## Fase 6 — ops (belum)
+## Fase 5 — UI (selesai)
+
+### Struktur baru
+
+```
+src/tuyabot/static/
+├── index.html        # markup saja (~250 baris, dari 1.643 baris campur)
+├── css/app.css       # seluruh gaya, pakai custom properties
+└── js/
+    ├── api.js        # fetch wrapper + error handling + login/logout
+    ├── chart.js      # grafik canvas, tanpa library
+    └── app.js        # state, render, SSE, aksi perangkat
+```
+
+### Perubahan yang berdampak, bukan cuma kosmetik
+
+| Sebelum | Sesudah | Alasan |
+|---|---|---|
+| API key di `localStorage` | login sekali → cookie `HttpOnly; SameSite=Strict` (HMAC, tanpa tabel sesi) | XSS di dashboard tidak lagi otomatis membocorkan kredensial |
+| Polling 30 detik per tab | SSE `/api/stream`, snapshot tiap 3 detik | status bergerak tanpa klik, dan SSE **tidak** memicu I/O perangkat (baca cache) |
+| `innerHTML` diisi data API | `textContent` lewat helper `el()` | tidak ada jalur injeksi HTML dari data |
+| `onclick=` inline | `addEventListener` di satu tempat | tidak ada kode JS di markup |
+| 1 file 56 KB | HTML + CSS + 3 modul JS | bisa dirawat dan di-cache terpisah |
+| Grafik tidak ada | grafik canvas (area + garis, penanda puncak, rentang 1j/24h/7h) | riwayat daya akhirnya terbaca sebagai tren |
+
+Tambahan UX: konfirmasi khusus sebelum mematikan pompa air, toast hasil aksi, empty state
+per tabel, `aria-live` pada strip ringkasan, tombol bisa dioperasikan keyboard, focus ring
+terlihat, `prefers-reduced-motion`, dan layout 390 px dengan lima tab tanpa scroll.
+
+### Endpoint baru
+
+- `POST /api/login` `{api_key}` → set cookie sesi. `POST /api/logout` → hapus cookie.
+  `GET /api/session` → `{authenticated: bool}` (tanpa auth) untuk memutuskan tampilan.
+- `GET /api/stream` (SSE). Isinya: `{ts, devices:{<nama>:{online, switch_on, power_w,
+  voltage_v, current_a, status_age_s, power_age_s}}}`. Butuh cookie sesi karena
+  `EventSource` tidak bisa mengirim header.
+- Autentikasi API tetap menerima `X-API-Key` untuk skrip/curl.
+
+### Bug yang ketangkap saat verifikasi visual
+
+Tiga hal ini tidak akan terlihat dari test unit, dan sudah diperbaiki:
+
+1. `[hidden]` kalah oleh `display: grid` di kelas `.login`/`.app` → halaman login dan
+   dashboard tampil bertumpuk. Diperbaiki dengan `[hidden] { display: none !important; }`.
+2. Kartu "Database" di strip kosong sampai tab Sistem dibuka (datanya hanya diambil di
+   `renderSystem`). Sekarang `loadDbStats()` dipanggil saat dashboard start.
+3. Urutan baris memakai `ORDER BY id DESC` → salah untuk data hasil impor/migrasi yang
+   id-nya tidak mengikuti waktu. Diubah ke `ORDER BY created_at DESC, id DESC`.
+
+Selain itu, label waktu paling kanan di grafik terpotong (dirapatkan ke tepi), dan lima tab
+tidak muat di 390 px (padding tab dikecilkan, jam disembunyikan di layar kecil).
+
+### Verifikasi
+
+- `ruff check .` bersih, `pytest -q` **101 passed** (sebelum fase ini 81).
+- Test baru: `test_api_auth.py` (10), `test_api_stream.py` (3), `test_static_ui.py` (7).
+  Guard statis memastikan: tidak ada `onclick=`, tidak ada `<style>` inline, tidak ada CDN,
+  tidak ada `innerHTML`, tidak ada `localStorage`.
+- Verifikasi visual nyata: aplikasi dijalankan dengan data demo di SQLite, dibuka di browser
+  (desktop + emulasi 390 px), login, tab Daya, tab Sistem, lalu screenshot diperiksa.
+  Itu yang menemukan tiga bug di atas.
+
+---
+
+## Fase 6 — Ops & dokumentasi (belum)
 
 - Uptime Kuma → `http://127.0.0.1:8080/healthz` (tanpa auth).
 - README ditulis ulang: arsitektur, env var, deploy, rollback, cara menambah device baru

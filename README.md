@@ -82,6 +82,19 @@ POWER_LOG_INTERVAL_MINUTES=5
 PYTHONPATH=src python -m tuyabot.main
 ```
 
+Dashboard: `http://127.0.0.1:8080/` (atau lewat reverse proxy di host).
+
+Login memakai `DASHBOARD_API_KEY` sekali; setelah itu dashboard memakai cookie sesi
+`HttpOnly; SameSite=Strict` (berlaku `SESSION_TTL_HOURS`, default 12 jam). API key tidak
+disimpan di browser. Untuk skrip/curl, header `X-API-Key` tetap diterima.
+
+Status perangkat di dashboard datang lewat SSE (`/api/stream`) yang membaca cache di memori —
+membuka banyak tab tidak menambah beban ke perangkat. Data tabel (riwayat daya/aktivitas)
+dimuat saat tab-nya dibuka.
+
+Variabel yang mengatur bagian ini: `SESSION_TTL_HOURS`, `SESSION_COOKIE_SECURE` (set `true`
+bila diakses lewat HTTPS), `SESSION_SECRET` (opsional), `STREAM_INTERVAL_SECONDS`.
+
 ---
 
 ## 🗄️ Database SQLite (embedded)
@@ -275,10 +288,14 @@ tuya-telegram-bot/
 │   ├── web/                    # REST API dashboard
 │   │   ├── app.py              # FastAPI app + /healthz
 │   │   ├── routes.py           # Endpoint perangkat, log, database
-│   │   ├── deps.py             # Autentikasi X-API-Key
+│   │   ├── deps.py             # Device lookup untuk endpoint
+│   │   ├── auth.py             # API key + session cookie (HMAC)
 │   │   └── schemas.py          # Pydantic models
 │   │
-│   └── static/index.html       # Dashboard
+│   └── static/                 # Dashboard
+│       ├── index.html          # markup saja
+│       ├── css/app.css
+│       └── js/                 # app.js, api.js, chart.js
 │
 ├── scripts/
 │   ├── scan_devices.py         # Discovery perangkat (sekali saat setup)

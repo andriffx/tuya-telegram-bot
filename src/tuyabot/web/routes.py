@@ -1,8 +1,13 @@
 """REST API routes untuk web dashboard."""
 
+import asyncio
+import json
 import logging
+import os
+import time
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response
+from fastapi.responses import StreamingResponse
 
 from ..access.roles import auth
 from ..config import DEVICES
@@ -10,7 +15,14 @@ from ..devices.service import run_tuya, tuya
 from ..infra.asyncdb import run_db
 from ..infra.state_cache import cache, get_power, get_status
 from ..storage import sqlite_store as database
-from .deps import get_device_names, verify_api_key
+from .auth import (
+    check_api_key,
+    clear_session_cookie,
+    require_auth,
+    set_session_cookie,
+    verify_session_token,
+)
+from .deps import get_device_names
 from .schemas import (
     ControlResponse,
     DeviceListResponse,
@@ -19,9 +31,90 @@ from .schemas import (
     PowerInfoResponse,
 )
 
-router = APIRouter(prefix="/api", dependencies=[Depends(verify_api_key)])
+# Seberapa sering SSE mengirim snapshot (detik).
+STREAM_INTERVAL_SECONDS = max(1.0, float(os.getenv("STREAM_INTERVAL_SECONDS", "3")))
+
+router = APIRouter(prefix="/api", dependencies=[Depends(require_auth)])
+
+# Endpoint autentikasi sengaja tanpa dependency autentikasi.
+auth_router = APIRouter(prefix="/api")
 
 logger = logging.getLogger(__name__)
+
+# ── Autentikasi dashboard ──
+
+
+@auth_router.post("/login")
+async def login(payload: dict, response: Response):
+    """Tukar API key dengan session cookie (HttpOnly, SameSite=Strict)."""
+    key = str(payload.get("api_key", ""))
+    if not check_api_key(key):
+        raise HTTPException(status_code=401, detail="API key tidak valid")
+    set_session_cookie(response)
+    return {"authenticated": True}
+
+
+@auth_router.post("/logout")
+async def logout(response: Response):
+    clear_session_cookie(response)
+    return {"authenticated": False}
+
+
+@auth_router.get("/session")
+async def session_status(tuyabot_session: str | None = Cookie(default=None)):
+    """Dipakai halaman untuk memutuskan tampil login atau dashboard."""
+    return {"authenticated": verify_session_token(tuyabot_session)}
+
+
+@router.get("/stream")
+async def stream(request: Request):
+    """SSE: kirim status perangkat dari cache, tanpa memicu I/O perangkat.
+
+    Pengambilan data dari perangkat tetap tugas scheduler (cache-warm). Endpoint
+    ini hanya membaca `state_cache`, jadi sepuluh tab dashboard tidak menambah
+    beban apa pun ke perangkat.
+    """
+
+    async def event_generator():
+        last_payload = None
+        while True:
+            if await request.is_disconnected():
+                break
+            payload = _live_snapshot()
+            serialized = json.dumps(payload, separators=(",", ":"))
+            if serialized != last_payload:
+                last_payload = serialized
+                yield f"data: {serialized}\n\n"
+            else:
+                yield ": keepalive\n\n"
+            await asyncio.sleep(STREAM_INTERVAL_SECONDS)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+def _live_snapshot() -> dict:
+    """Susun snapshot dari cache: status, daya, dan umur datanya."""
+    devices: dict[str, dict] = {}
+    for name in DEVICES:
+        status = cache.read(name, "status") or {}
+        power = cache.read(name, "power") or {}
+        raw_dps = status.get("status")
+        dps: dict = raw_dps if isinstance(raw_dps, dict) else {}
+        switch_key = str(DEVICES[name].get("dps_switch", 1))
+        devices[name] = {
+            "online": bool(status.get("success")),
+            "switch_on": bool(dps.get(switch_key)) if switch_key in dps else None,
+            "status_age_s": round(cache.age((name, "status")) or 0, 1),
+            "power_w": power.get("power_w") if power.get("success") else None,
+            "voltage_v": power.get("voltage_v") if power.get("success") else None,
+            "current_a": power.get("current_a") if power.get("success") else None,
+            "power_age_s": round(cache.age((name, "power")) or 0, 1),
+        }
+    return {"ts": time.time(), "devices": devices}
 
 
 def _switch_from_dps(name: str, dps: dict) -> bool | None:

@@ -114,6 +114,10 @@ class DeviceStateCache:
             for (device, kind), (_, value) in self._entries.items()
         }
 
+    def read(self, device_name: str, kind: str = "status") -> dict[str, Any] | None:
+        """Baca cache tanpa memicu pembacaan perangkat (untuk SSE/dashboard)."""
+        return self.last_result((device_name, kind))
+
 
 cache = DeviceStateCache()
 

@@ -477,7 +477,7 @@ def get_recent_app_errors(limit: int = 20) -> list[dict]:
                 """
                 SELECT id, level, logger_name, message, exception_trace, file_name, line_number, created_at
                 FROM app_error_logs
-                ORDER BY id DESC
+                ORDER BY created_at DESC, id DESC
                 LIMIT ?
                 """,
                 (limit,),
@@ -512,7 +512,7 @@ def get_recent_power_logs(device_name: str | None = None, limit: int = 50) -> li
             if device_name:
                 sql += " WHERE device_name = ?"
                 params = (device_name,)
-            sql += " ORDER BY id DESC LIMIT ?"
+            sql += " ORDER BY created_at DESC, id DESC LIMIT ?"
             params += (limit,)
 
             cursor.execute(sql, params)
@@ -542,7 +542,7 @@ def get_recent_activities(limit: int = 50) -> list[dict]:
                 """
                 SELECT id, user_id, user_role, device_name, action, status, message, created_at
                 FROM device_activity_logs
-                ORDER BY id DESC
+                ORDER BY created_at DESC, id DESC
                 LIMIT ?
                 """,
                 (limit,),

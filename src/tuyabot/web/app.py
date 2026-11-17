@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from .routes import router
+from .routes import auth_router, router
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 # Docs Swagger hanya aktif jika explicitly di-enable (hindari expose struktur API)
@@ -22,6 +22,7 @@ app = FastAPI(
     openapi_url="/openapi.json" if API_DOCS else None,
 )
 
+app.include_router(auth_router)
 app.include_router(router)
 
 if STATIC_DIR.exists():
